@@ -2,11 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps.",
   "website": "https://navibeat.app",
   "permissions": {
-    "subsonicapi": { "reason": "Required to read the library and create playlists." },
-    "users": { "reason": "Required for SubsonicAPI access and per-user mixes." }
+    "scheduler": {
+      "reason": "Required to refresh your mixes on a daily schedule."
+    },
+    "subsonicapi": {
+      "reason": "Required to read your library and create the playlists."
+    },
+    "users": {
+      "reason": "Required to build mixes per user. Every Subsonic call needs a user to act as."
+    },
+    "kvstore": {
+      "reason": "Required to remember when you listen to what, which is what makes the mixes personal. Stays on your server."
+    }
   }
 }

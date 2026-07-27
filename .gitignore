@@ -4,5 +4,6 @@ plugin.wasm
 
 # Scratch Navidrome instance and sample library, never committed
 dev/data/
+dev/plugins/
 dev/music/
 dev/cache/

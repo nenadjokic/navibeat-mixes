@@ -23,8 +23,12 @@ $(NDP): plugin.wasm manifest.json
 
 # Unit tests run natively. The PDK ships stub implementations behind
 # `//go:build !wasip1` precisely so plugin logic stays testable off-target.
+#
+# ./internal/... and not ./...: the root package imports the extism PDK, whose
+# host bindings exist only for wasip1, so it cannot compile for the host at
+# all. Everything worth testing lives under internal/ for exactly that reason.
 test:
-	go test ./...
+	go test ./internal/...
 
 # Hard project rule: no em dash anywhere, including code and comments.
 check-emdash:
