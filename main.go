@@ -151,6 +151,11 @@ func generateForUser(cfg config.Config, username string) error {
 			RecentGrace:  30 * 24 * time.Hour,
 			MinPlayCount: 3,
 			Size:         cfg.MixSize,
+			// Never offer back something played this month, however little
+			// else the library has: that would read as a shuffle of this
+			// week rather than a rediscovery.
+			RelaxFloor: 30 * 24 * time.Hour,
+			MinUseful:  minMixSize,
 		})
 		writeMix(client, cfg, sel, now, username)
 	}
@@ -252,6 +257,12 @@ func kindFor(slot mixes.Slot) string {
 func describe(cfg config.Config, sel mixes.Selection) string {
 	name := cfg.SlotNames[string(sel.Slot)]
 	if sel.Slot == mixes.Rediscover {
+		if sel.Relaxed {
+			// Say so. A user who set six months and got six weeks deserves to
+			// know the library could not fill it, rather than assuming the
+			// setting was ignored.
+			return "NaviBeat Mixes: the music you loved that you have left alone longest. Refreshes weekly."
+		}
 		return "NaviBeat Mixes: music you loved and have not played in months. Refreshes weekly."
 	}
 	if sel.Mode == mixes.ModeAffinity {

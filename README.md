@@ -1,4 +1,12 @@
-# NaviBeat Mixes
+<p align="center">
+  <a href="https://navibeat.app"><img src="docs/img/navibeat-logo.png" width="120" alt="NaviBeat"></a>
+</p>
+
+<h1 align="center">NaviBeat Mixes</h1>
+
+<p align="center">
+  <a href="https://navibeat.app"><b>navibeat.app</b></a>
+</p>
 
 [![Downloads](https://img.shields.io/github/downloads/nenadjokic/navibeat-mixes/total?label=downloads&color=F47B20&style=flat-square)](../../releases)
 [![Latest release](https://img.shields.io/github/v/release/nenadjokic/navibeat-mixes?include_prereleases&label=release&color=F47B20&style=flat-square)](../../releases/latest)
@@ -33,7 +41,9 @@ Names and the prefix are configurable. They are fixed per mix and never change
 with their contents, so you get a set of playlists that stays the same set
 rather than a new one appearing every week.
 
-![The mixes alongside the rest of a library](docs/img/library-real.png)
+![The mixes in the playlist list](docs/img/mixes-list.png)
+
+They are created **private**, so on a shared server nobody else sees your mixes.
 
 ## Honest about what it knows
 

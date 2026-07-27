@@ -202,3 +202,63 @@ func TestSelectionIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// The bug this was written for, measured on a real library: 249 starred
+// tracks, the OLDEST last played 100 days ago, a six month default, and
+// therefore no playlist at all with nothing on screen to explain why.
+func TestRediscoverWidensItsWindowRatherThanProducingNothing(t *testing.T) {
+	var tracks []Track
+	for i := 0; i < 40; i++ {
+		tracks = append(tracks, Track{
+			ID: "t" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
+			Starred: true, LastPlayed: ago(time.Duration(60+i) * day),
+		})
+	}
+	opt := RediscoverOptions{
+		Now: now, MinAge: 180 * day, RecentGrace: 30 * day,
+		MinPlayCount: 3, Size: 30, RelaxFloor: 30 * day, MinUseful: 10,
+	}
+	got := BuildRediscover(tracks, opt)
+	if len(got.TrackIDs) == 0 {
+		t.Fatal("produced nothing. Nothing here is six months old, but 40 tracks are two months old and the user should still get a mix")
+	}
+	if !got.Relaxed {
+		t.Error("widened the window without reporting it, so the description would claim a preference it did not meet")
+	}
+}
+
+// Widening must never reach into this week's listening.
+func TestRediscoverNeverOffersBackSomethingPlayedThisWeek(t *testing.T) {
+	tracks := []Track{
+		{ID: "yesterday", Starred: true, LastPlayed: ago(1 * day)},
+		{ID: "last-week", Starred: true, LastPlayed: ago(5 * day)},
+	}
+	opt := RediscoverOptions{
+		Now: now, MinAge: 180 * day, RecentGrace: 30 * day,
+		MinPlayCount: 3, Size: 30, RelaxFloor: 30 * day, MinUseful: 10,
+	}
+	if got := BuildRediscover(tracks, opt); len(got.TrackIDs) != 0 {
+		t.Errorf("selected %v, but nothing here is older than the floor", got.TrackIDs)
+	}
+}
+
+// When the library genuinely has old favourites, the preference is honoured
+// and the description must not claim it was relaxed.
+func TestRediscoverDoesNotRelaxWhenItDoesNotHaveTo(t *testing.T) {
+	var tracks []Track
+	for i := 0; i < 20; i++ {
+		tracks = append(tracks, Track{
+			ID: "old" + string(rune('a'+i)), Starred: true, LastPlayed: ago(400 * day),
+		})
+	}
+	got := BuildRediscover(tracks, RediscoverOptions{
+		Now: now, MinAge: 180 * day, RecentGrace: 30 * day,
+		MinPlayCount: 3, Size: 30, RelaxFloor: 30 * day, MinUseful: 10,
+	})
+	if got.Relaxed {
+		t.Error("reported relaxed when 20 tracks met the preferred window")
+	}
+	if len(got.TrackIDs) != 20 {
+		t.Errorf("selected %d, want 20", len(got.TrackIDs))
+	}
+}

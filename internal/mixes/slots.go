@@ -74,8 +74,11 @@ type SlotAffinity map[string]map[Slot]int
 
 // Selection is the result of building one mix.
 type Selection struct {
-	Slot     Slot
-	Mode     Mode
+	Slot Slot
+	Mode Mode
+	// Relaxed reports that the preferred age window could not fill the mix and
+	// a wider one was used, so the description can be honest about it.
+	Relaxed  bool
 	TrackIDs []string
 }
 
@@ -92,6 +95,12 @@ type RediscoverOptions struct {
 	MinPlayCount int
 	// Size caps the result.
 	Size int
+	// RelaxFloor is how recent is too recent to ever count as forgotten, no
+	// matter how little else the library offers.
+	RelaxFloor time.Duration
+	// MinUseful is how many candidates make a mix worth building. Below this
+	// the window widens rather than shipping a stub.
+	MinUseful int
 }
 
 // BuildRediscover selects tracks the user clearly liked and has not heard in a
@@ -99,43 +108,72 @@ type RediscoverOptions struct {
 // count are exposed per song from the moment the plugin is installed, which is
 // what makes the plugin useful on the day it is installed rather than a month
 // later.
+//
+// THE AGE THRESHOLD IS A PREFERENCE, NOT A GATE, and that was a real bug.
+// A fixed "six months untouched" rule assumes a library big enough or a
+// listener idle enough to have six-month-old favourites. Measured on an active
+// library of 249 starred tracks, the OLDEST last play was 100 days: the default
+// produced zero candidates and the user got no playlist at all, with nothing on
+// screen to explain why.
+//
+// So the threshold is tried first, and if it cannot fill a mix the window
+// relaxes to whatever the library can actually offer, down to RelaxFloor. The
+// caller is told which happened (`Relaxed`) so the description can say so
+// rather than quietly pretending the preference was met.
 func BuildRediscover(tracks []Track, opt RediscoverOptions) Selection {
-	var eligible []Track
-	for _, t := range tracks {
-		if t.LastPlayed.IsZero() {
-			// Never played is not rediscovery, it is discovery. Different mix.
-			continue
-		}
-		liked := t.Starred || t.PlayCount >= opt.MinPlayCount
-		if !liked {
-			continue
-		}
-		age := opt.Now.Sub(t.LastPlayed)
-		if age < opt.MinAge {
-			continue
-		}
-		if age < opt.RecentGrace {
-			continue
-		}
-		eligible = append(eligible, t)
-	}
-
-	// Oldest first, so the mix leads with what has been forgotten longest.
-	// Ties break on id to keep the output deterministic, which matters
-	// because an unstable order would rewrite the playlist on every run and
-	// make it look like it changed when it did not.
-	sort.Slice(eligible, func(i, j int) bool {
-		if !eligible[i].LastPlayed.Equal(eligible[j].LastPlayed) {
-			return eligible[i].LastPlayed.Before(eligible[j].LastPlayed)
-		}
-		return eligible[i].ID < eligible[j].ID
-	})
-
+	eligible, relaxed := rediscoverPool(tracks, opt)
 	return Selection{
 		Slot:     Rediscover,
 		Mode:     ModeFallback, // Rediscover never needs the histogram.
+		Relaxed:  relaxed,
 		TrackIDs: takeIDs(eligible, opt.Size),
 	}
+}
+
+// rediscoverPool applies the preferred age window, then widens it if that
+// cannot fill a mix. Returns the candidates and whether widening was needed.
+func rediscoverPool(tracks []Track, opt RediscoverOptions) ([]Track, bool) {
+	windows := []time.Duration{opt.MinAge}
+	// Halve the window until it reaches the floor. Below the floor a track is
+	// simply not forgotten yet, and offering it back would make the mix feel
+	// like a shuffle of this week's listening.
+	for w := opt.MinAge / 2; w >= opt.RelaxFloor && w > 0; w /= 2 {
+		windows = append(windows, w)
+	}
+	if opt.RelaxFloor > 0 {
+		windows = append(windows, opt.RelaxFloor)
+	}
+
+	for i, window := range windows {
+		var out []Track
+		for _, t := range tracks {
+			if t.LastPlayed.IsZero() {
+				// Never played is not rediscovery, it is discovery.
+				continue
+			}
+			if !t.Starred && t.PlayCount < opt.MinPlayCount {
+				continue
+			}
+			if opt.Now.Sub(t.LastPlayed) < window {
+				continue
+			}
+			out = append(out, t)
+		}
+		sortOldestFirst(out)
+		if len(out) >= opt.MinUseful || i == len(windows)-1 {
+			return out, i > 0
+		}
+	}
+	return nil, true
+}
+
+func sortOldestFirst(tracks []Track) {
+	sort.Slice(tracks, func(i, j int) bool {
+		if !tracks[i].LastPlayed.Equal(tracks[j].LastPlayed) {
+			return tracks[i].LastPlayed.Before(tracks[j].LastPlayed)
+		}
+		return tracks[i].ID < tracks[j].ID
+	})
 }
 
 // TimeMixOptions controls one time-of-day mix.
