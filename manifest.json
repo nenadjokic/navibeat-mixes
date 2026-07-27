@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -132,6 +132,51 @@
           "title": "Share Wrapped for a public link",
           "default": false,
           "description": "OFF by default. When on, and only then, an aggregate is sent to navibeat.app to build a shareable page: counts, your top artist names and your peak listening hour. Never a play log, never track ids, never your username, and nothing identifying your server."
+        },
+        "enableNewMusic": {
+          "type": "boolean",
+          "title": "New Music",
+          "default": true
+        },
+        "enableLoved": {
+          "type": "boolean",
+          "title": "Your Loved Songs",
+          "default": true
+        },
+        "enableOnRepeat": {
+          "type": "boolean",
+          "title": "On Repeat",
+          "default": true
+        },
+        "enableEssentials": {
+          "type": "boolean",
+          "title": "Your Essentials",
+          "default": true
+        },
+        "enableDiscovery": {
+          "type": "boolean",
+          "title": "Weekly Discovery",
+          "default": true
+        },
+        "enableGenreRadio": {
+          "type": "boolean",
+          "title": "Genre Radio 1 to 3",
+          "default": true
+        },
+        "enableArtistRadio": {
+          "type": "boolean",
+          "title": "Artist Radio 1 to 5",
+          "default": true
+        },
+        "enableDailyMix": {
+          "type": "boolean",
+          "title": "Daily Mix 1 to 3",
+          "default": true
+        },
+        "enableDecade": {
+          "type": "boolean",
+          "title": "Decade mixes",
+          "default": true
         }
       }
     },
@@ -179,6 +224,42 @@
             {
               "type": "Control",
               "scope": "#/properties/enableWrapped"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableNewMusic"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableLoved"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableOnRepeat"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableEssentials"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableDiscovery"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableGenreRadio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableArtistRadio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableDailyMix"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableDecade"
             }
           ]
         },

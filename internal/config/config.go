@@ -121,6 +121,11 @@ func Load(get Getter) Config {
 		{"morning", "enableMorning"}, {"afternoon", "enableAfternoon"},
 		{"evening", "enableEvening"}, {"night", "enableNight"},
 		{"rediscover", "enableRediscover"}, {"wrapped", "enableWrapped"},
+		{"newmusic", "enableNewMusic"}, {"loved", "enableLoved"},
+		{"onrepeat", "enableOnRepeat"}, {"essentials", "enableEssentials"},
+		{"discovery", "enableDiscovery"}, {"genreradio", "enableGenreRadio"},
+		{"artistradio", "enableArtistRadio"}, {"dailymix", "enableDailyMix"},
+		{"decade", "enableDecade"},
 	} {
 		v := strings.TrimSpace(get(m.field))
 		if v == "" {

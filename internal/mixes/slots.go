@@ -62,6 +62,7 @@ type Track struct {
 	Title     string
 	Artist    string
 	Genre     string
+	Year      int
 	PlayCount int
 	// LastPlayed is the zero time when the track has never been played.
 	LastPlayed time.Time

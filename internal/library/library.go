@@ -36,6 +36,7 @@ type song struct {
 	Title     string `json:"title"`
 	Artist    string `json:"artist"`
 	Genre     string `json:"genre"`
+	Year      int    `json:"year"`
 	PlayCount int    `json:"playCount"`
 	Played    string `json:"played"`
 	Starred   string `json:"starred"`
@@ -122,6 +123,7 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 				Title:      s.Title,
 				Artist:     s.Artist,
 				Genre:      s.Genre,
+				Year:       s.Year,
 				PlayCount:  s.PlayCount,
 				LastPlayed: parseTime(s.Played),
 				Starred:    s.Starred != "",

@@ -28,22 +28,33 @@ NaviBeat, anything else. Nothing to install on the client side.
 
 ## What you get
 
+Up to 23 playlists, every one of them optional.
+
 | Playlist | What is in it |
 |---|---|
-| 🟠 Morning | What you play between 05:00 and 11:00 |
-| 🟠 Afternoon | 11:00 to 17:00 |
-| 🟠 Evening | 17:00 to 23:00 |
-| 🟠 Night | 23:00 to 05:00 |
-| 🟠 Rediscover | Starred or often-played music you have not touched in months |
-| 🟠 Wrapped 2026 | Your most played, since the plugin was installed |
+| Morning / Afternoon / Evening / Night | What you play in that part of the day |
+| Rediscover | Music you loved and have left alone longest |
+| New Music | The newest additions to your library |
+| Your Loved Songs | Everything you starred, oldest favourite first |
+| On Repeat | What you have been playing over and over lately |
+| Your Essentials | Your most played of all time |
+| Weekly Discovery | Music you own, played once or twice, then forgot |
+| Genre Radio 1 to 3 | Your strongest genres, ranked by what you play |
+| Artist Radio 1 to 5 | Everything you have by each of your top artists |
+| Daily Mix 1 to 3 | Built around a different anchor artist each |
+| Decade mixes | Your strongest decades, for example 1990s |
+| Wrapped 2026 | Your most played since the plugin was installed |
 
-Names and the prefix are configurable. They are fixed per mix and never change
-with their contents, so you get a set of playlists that stays the same set
-rather than a new one appearing every week.
+### Playlist names never change
 
-![The mixes in the playlist list](docs/img/mixes-list.png)
+This matters more than it sounds. A playlist called "Artist Radio 1: LINKIN
+PARK" gets a new name the day your listening shifts, which creates a **new**
+playlist and orphans the old one. That is why servers running some playlist
+plugins need a cleanup script on a cron.
 
-They are created **private**, so on a shared server nobody else sees your mixes.
+Here the name is "Artist Radio 1" and the artist goes in the description. The
+number is the identity, so the playlist you pinned last month is still the same
+playlist today, whatever is inside it.
 
 ## Honest about what it knows
 
