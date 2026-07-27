@@ -164,27 +164,44 @@ func (c *Client) Playlists() ([]Playlist, error) {
 	return env.Response.Playlists.Playlist, nil
 }
 
-// EnsurePlaylist finds a playlist by exact name or creates it, and returns its
-// id. Creating rather than replacing is what keeps a scheduled run from
-// leaving a trail of duplicates.
+// EnsurePlaylist finds this user's playlist by name, or creates it.
+//
+// THE OWNER CHECK IS LOAD BEARING ON A MULTI-USER SERVER, and its absence was
+// a real bug found on one. `getPlaylists` returns every playlist the caller
+// can see, which includes other people's public ones. Matching on name alone
+// meant the second user to run would find the FIRST user's "Morning" mix and
+// quietly overwrite it with their own taste in music.
+//
+// Mixes are per user by design, so two people are supposed to end up with two
+// playlists of the same name. Only the owner may be handed back their own.
 func (c *Client) EnsurePlaylist(name string) (string, error) {
 	existing, err := c.Playlists()
 	if err != nil {
 		return "", err
 	}
 	for _, p := range existing {
-		if p.Name == name {
+		if p.Name == name && p.Owner == c.user {
 			return p.ID, nil
 		}
 	}
+	// Created non-public: these are personal mixes, and a server with five
+	// accounts should not show everyone five copies of "Morning".
 	env, err := c.do("createPlaylist", url.Values{"name": {name}})
 	if err != nil {
 		return "", err
 	}
-	if env.Response.Playlist.ID == "" {
+	id := env.Response.Playlist.ID
+	if id == "" {
 		return "", fmt.Errorf("createPlaylist %q returned no id", name)
 	}
-	return env.Response.Playlist.ID, nil
+	if _, err := c.do("updatePlaylist", url.Values{
+		"playlistId": {id}, "public": {"false"},
+	}); err != nil {
+		// Not fatal: a mix that is visible to others still works, it is just
+		// untidy, and failing here would cost the user the whole playlist.
+		_ = err
+	}
+	return id, nil
 }
 
 // ReplaceTracks sets a playlist's contents to exactly the given ids.

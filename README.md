@@ -188,4 +188,17 @@ made by hand.
 
 ## Licence
 
-TBD before the first public release.
+**GPL-3.0-or-later**, the same licence as Navidrome itself.
+
+This is not a preference, it follows from how the plugin is built: it links
+Navidrome's own Go plugin development kit into the compiled `plugin.wasm`, and
+Navidrome is GPL-3.0. Distributing that binary therefore means distributing
+GPL-3.0 code, so the whole plugin is GPL-3.0.
+
+It also happens to be the right choice. It matches the project it extends, it
+is the licence the self-hosted community expects, and it guarantees that anyone
+who ships a modified version of this plugin has to publish their changes.
+
+Nothing here restricts any music player that merely reads the playlists it
+creates. Reading a playlist over the Subsonic API is two separate programs
+talking over a network protocol, not a derived work.

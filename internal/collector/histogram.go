@@ -99,6 +99,20 @@ func (s *State) Affinity() mixes.SlotAffinity {
 	return out
 }
 
+// TotalPlays returns observed plays per track, which is what the yearly recap
+// is ranked by.
+func (s *State) TotalPlays() map[string]int {
+	out := make(map[string]int, len(s.Tracks))
+	for id, slots := range s.Tracks {
+		total := 0
+		for _, n := range slots {
+			total += n
+		}
+		out[id] = total
+	}
+	return out
+}
+
 // Prune keeps the state from growing without bound on a large library, by
 // dropping the least-played tracks once there are more than `cap` of them.
 // Without this, a library of tens of thousands of tracks would eventually

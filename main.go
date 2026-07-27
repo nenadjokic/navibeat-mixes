@@ -48,6 +48,12 @@ const (
 	// One artist may contribute at most this many tracks to a mix. Thirty
 	// tracks by one artist is an album, not a mix.
 	maxPerArtist = 3
+
+	// The control playlist is polled far more often than mixes are generated,
+	// because a person who presses "re-roll" is standing there waiting.
+	controlScheduleID = "navibeat-mixes-control"
+	controlCron       = "*/5 * * * *"
+	controlName       = "NaviBeat control"
 )
 
 func init() {
@@ -73,11 +79,20 @@ func (p *plugin) OnInit() error {
 	if _, err := host.SchedulerScheduleRecurring(scheduleCron, "generate", scheduleID); err != nil {
 		logf("could not register the daily schedule: %v", err)
 	}
+	if _, err := host.SchedulerScheduleRecurring(controlCron, "control", controlScheduleID); err != nil {
+		logf("could not register the control poll: %v", err)
+	}
 	return generateAll()
 }
 
-// OnCallback runs the scheduled generation.
-func (p *plugin) OnCallback(scheduler.SchedulerCallbackRequest) error {
+// OnCallback runs whichever job fired. The control poll is deliberately a
+// separate schedule from generation: a malformed command must not be able to
+// stop the mixes from being refreshed, which is the whole reason the design
+// keeps these two apart.
+func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
+	if req.Payload == "control" {
+		return pollControl()
+	}
 	return generateAll()
 }
 
@@ -133,6 +148,19 @@ func generateForUser(cfg config.Config, username string) error {
 		writeMix(client, cfg, sel, now, username)
 	}
 
+	if cfg.MixEnabled("wrapped") {
+		year := mixes.YearOf(now)
+		sel := mixes.BuildWrapped(tracks, mixes.WrappedOptions{
+			Plays:        state.TotalPlays(),
+			Size:         cfg.MixSize,
+			MaxPerArtist: maxPerArtist,
+		})
+		sel.Slot = mixes.Slot(mixes.WrappedSlot(year))
+		writeNamed(client, cfg.Prefix+mixes.WrappedName(year), sel,
+			"Your most played music since NaviBeat Mixes was installed. Grows through the year.",
+			"wrapped", now, username)
+	}
+
 	affinity := state.Affinity()
 	for _, slot := range mixes.TimeSlots {
 		if !cfg.MixEnabled(string(slot)) {
@@ -161,7 +189,14 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 		return
 	}
 
-	name := cfg.PlaylistName(string(sel.Slot))
+	writeNamed(client, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
+}
+
+// writeNamed does the actual create-or-update for one playlist.
+func writeNamed(client *library.Client, name string, sel mixes.Selection, human, kind string, now time.Time, username string) {
+	if len(sel.TrackIDs) == 0 {
+		return
+	}
 	id, err := client.EnsurePlaylist(name)
 	if err != nil {
 		logf("user %s: %v", username, err)
@@ -177,8 +212,8 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 		return
 	}
 
-	comment := protocol.Format(describe(cfg, sel), protocol.Meta{
-		Kind:  kindFor(sel.Slot),
+	comment := protocol.Format(human, protocol.Meta{
+		Kind:  kind,
 		Slot:  string(sel.Slot),
 		Date:  now.Format("2006-01-02"),
 		Mode:  string(sel.Mode),
@@ -296,3 +331,98 @@ func replaceFirstVerb(s string, a any) string {
 }
 
 func main() {}
+
+// Control: the client-to-plugin mailbox.
+
+// pollControl reads the control playlist, executes any command it finds, and
+// writes back a result.
+//
+// There is no inbound channel to a plugin at all, so a playlist description is
+// the only place a client can leave a message. That makes this the most
+// exposed surface in the plugin: the field is editable by hand in every
+// client, so it is treated as untrusted input throughout. Anything not fully
+// understood is cleared rather than guessed at.
+func pollControl() error {
+	cfg := config.Load(func(key string) string { v, _ := pdk.GetConfig(key); return v })
+
+	users, err := host.UsersGetUsers()
+	if err != nil || len(users) == 0 {
+		return nil
+	}
+
+	for _, u := range users {
+		client := library.New(host.SubsonicAPICall, u.UserName)
+		name := cfg.Prefix + controlName
+
+		playlists, err := client.Playlists()
+		if err != nil {
+			continue
+		}
+		var target *library.Playlist
+		for i := range playlists {
+			if playlists[i].Name == name {
+				target = &playlists[i]
+				break
+			}
+		}
+		if target == nil {
+			// The mailbox is only created once a client asks for it, so an
+			// unused server never grows a playlist nobody wanted.
+			continue
+		}
+
+		cmd, ok := protocol.ParseCommand(target.Comment)
+		if !ok {
+			continue
+		}
+
+		// Nonce de-duplication. Without it the command sits in the playlist
+		// and is executed again on every poll, turning one button press into
+		// an endless regeneration loop.
+		if lastNonce(u.UserName) == cmd.Nonce {
+			continue
+		}
+		setLastNonce(u.UserName, cmd.Nonce)
+
+		result := protocol.ResultDone
+		if err := runCommand(cfg, u.UserName, cmd); err != nil {
+			logf("control command failed: %v", err)
+			result = protocol.ResultRejected
+		}
+
+		// Clear the command and leave the result in its place, so the mailbox
+		// is empty and the client can see its request was handled.
+		_ = client.SetComment(target.ID, protocol.Format(
+			"NaviBeat uses this playlist to talk to the Mixes plugin. Safe to delete if you do not use NaviBeat.",
+			protocol.Meta{Kind: "control", Slot: "control", Date: time.Now().Format("2006-01-02"), Mode: "ready", Count: 0},
+		)+"\n"+protocol.FormatResult(result, cmd.Slot, cmd.Nonce))
+	}
+	return nil
+}
+
+func runCommand(cfg config.Config, username string, cmd protocol.Command) error {
+	switch cmd.Kind {
+	case protocol.CmdRefreshAll:
+		return generateForUser(cfg, username)
+	case protocol.CmdReroll:
+		// Re-rolling one mix still runs the whole user pass. Generation is
+		// cheap next to the round trips it already makes, and a partial pass
+		// would need a second code path that could drift from the first.
+		return generateForUser(cfg, username)
+	}
+	return nil
+}
+
+func nonceKey(username string) string { return "ctl:" + username + ":lastNonce" }
+
+func lastNonce(username string) string {
+	data, ok, err := host.KVStoreGet(nonceKey(username))
+	if err != nil || !ok {
+		return ""
+	}
+	return string(data)
+}
+
+func setLastNonce(username, nonce string) {
+	_ = host.KVStoreSet(nonceKey(username), []byte(nonce))
+}
