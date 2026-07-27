@@ -17,10 +17,14 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/lifecycle"
+	"github.com/navidrome/navidrome/plugins/pdk/go/scrobbler"
+
+	"github.com/extism/go-pdk"
 
 	"github.com/nenadjokic/navibeat-mixes/internal/protocol"
 )
@@ -33,6 +37,11 @@ const playlistName = "NaviBeat Mixes toolchain check"
 
 func init() {
 	lifecycle.Register(&plugin{})
+	// The manifest says NOTHING about capabilities, on purpose. If the host
+	// reports Scrobbler after this line is added, capability really is decided
+	// by which functions the WASM exports, which is the assumption the whole
+	// time-of-day feature rests on.
+	scrobbler.Register(&plugin{})
 }
 
 type plugin struct{}
@@ -161,6 +170,40 @@ func describe(id, username string) error {
 		"&comment=" + url.QueryEscape(comment) +
 		"&u=" + url.QueryEscape(username))
 	return err
+}
+
+// The four Scrobbler methods below are all required: the PDK registers the
+// capability as a set, and a missing one would make the host skip the plugin.
+// Only Scrobble carries the signal the Collector will eventually want. The
+// rest are honest no-ops for now, and each logs so the host's real call
+// pattern for a single play can be observed rather than guessed at.
+
+func (p *plugin) IsAuthorized(req scrobbler.IsAuthorizedRequest) (bool, error) {
+	pluginLog("scrobbler.IsAuthorized user=" + req.Username)
+	return true, nil
+}
+
+func (p *plugin) NowPlaying(req scrobbler.NowPlayingRequest) error {
+	pluginLog("scrobbler.NowPlaying user=" + req.Username + " track=" + req.Track.Title)
+	return nil
+}
+
+func (p *plugin) Scrobble(req scrobbler.ScrobbleRequest) error {
+	pluginLog("scrobbler.Scrobble user=" + req.Username + " track=" + req.Track.Title +
+		" ts=" + strconv.FormatInt(req.Timestamp, 10))
+	return nil
+}
+
+func (p *plugin) PlaybackReport(req scrobbler.PlaybackReportRequest) error {
+	pluginLog("scrobbler.PlaybackReport user=" + req.Username + " state=" + req.State +
+		" track=" + req.Track.Title)
+	return nil
+}
+
+// pluginLog writes where the host will show it. A plugin has no stdout of its
+// own worth reading, so this is how the call pattern gets observed.
+func pluginLog(msg string) {
+	pdk.Log(pdk.LogInfo, "[navibeat-mixes] "+msg)
 }
 
 func main() {}

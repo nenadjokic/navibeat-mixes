@@ -51,15 +51,24 @@ docker run -d --name "$NAME" -p "$PORT":4533 \
 echo "waiting for first start ..."
 sleep 20
 
-# Navidrome discovers a plugin but leaves it disabled until someone approves
-# its permissions, which normally happens in the admin UI. For an unattended
-# dev loop we grant it directly. The container is stopped first because writing
-# to a live SQLite database is how you get a corrupted one.
+# Navidrome discovers a plugin but leaves it DISABLED until someone approves
+# its permissions, which normally happens in the admin UI. Worse for a build
+# loop: it disables the plugin again on every file change, because the new file
+# may declare different permissions. Expect to run this after every `make`.
+#
+# The write happens with `docker exec`, INSIDE the container, and never with a
+# host sqlite3 against the bind mount. Doing it from the host produced
+# "database disk image is malformed" from the running server: SQLite over a
+# virtualised shared mount, written by two sides at once, is a known way to
+# corrupt a database. The image already ships sqlite3, so there is no reason
+# to reach in from outside.
 docker stop "$NAME" >/dev/null
 sleep 2
-sqlite3 dev/data/navidrome.db \
-  "update plugin set enabled=1, all_users=1, all_libraries=1 where id='navibeat-mixes';"
 docker start "$NAME" >/dev/null
+sleep 15
+docker exec "$NAME" sqlite3 /data/navidrome.db \
+  "update plugin set enabled=1, all_users=1, all_libraries=1 where id='navibeat-mixes';"
+docker restart "$NAME" >/dev/null
 sleep 25
 
 echo "scratch Navidrome on http://localhost:$PORT  (admin / devpassword)"
