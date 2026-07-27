@@ -165,3 +165,64 @@ func TestNewMusicKeepsTheOrderItWasGiven(t *testing.T) {
 }
 
 var _ = time.Now
+
+func TestWeekIndexIsStableWithinAWeekAndAdvancesBetweenWeeks(t *testing.T) {
+	monday := time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)
+	sameWeek := monday.Add(3 * 24 * time.Hour)
+	nextWeek := monday.Add(8 * 24 * time.Hour)
+
+	if WeekIndex(monday) != WeekIndex(sameWeek) {
+		t.Error("the rotation moved mid-week, so a pinned playlist would change under the user")
+	}
+	if WeekIndex(monday) == WeekIndex(nextWeek) {
+		t.Error("the rotation did not advance after a week")
+	}
+}
+
+// ISO week numbers reset each January, which would send the rotation
+// backwards every new year.
+func TestWeekIndexDoesNotResetAtTheYearBoundary(t *testing.T) {
+	dec := time.Date(2026, 12, 28, 0, 0, 0, 0, time.UTC)
+	jan := time.Date(2027, 1, 4, 0, 0, 0, 0, time.UTC)
+	if WeekIndex(jan) <= WeekIndex(dec) {
+		t.Errorf("rotation went backwards across the year: %d then %d", WeekIndex(dec), WeekIndex(jan))
+	}
+}
+
+// The point of rotating is that a listener meets different music. A window
+// equal to the pool would rotate forever and show the same set every week.
+func TestRotateShowsADifferentWindowEachWeek(t *testing.T) {
+	pool := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+	first := Rotate(pool, 10, 3)
+	second := Rotate(pool, 11, 3)
+	if len(first) != 3 || len(second) != 3 {
+		t.Fatalf("windows were %v and %v", first, second)
+	}
+	same := true
+	for i := range first {
+		if first[i] != second[i] {
+			same = false
+		}
+	}
+	if same {
+		t.Errorf("consecutive weeks produced the same window: %v", first)
+	}
+}
+
+func TestRotateIsStableForTheSameWeek(t *testing.T) {
+	pool := []string{"a", "b", "c", "d", "e"}
+	for i := 0; i < 5; i++ {
+		if Rotate(pool, 42, 2)[0] != Rotate(pool, 42, 2)[0] {
+			t.Fatal("the same week produced different windows")
+		}
+	}
+}
+
+func TestRotateSurvivesAPoolSmallerThanTheWindow(t *testing.T) {
+	if got := Rotate([]string{"only"}, 7, 5); len(got) != 1 || got[0] != "only" {
+		t.Errorf("Rotate = %v, want [only]", got)
+	}
+	if got := Rotate([]string{}, 7, 5); got != nil {
+		t.Errorf("Rotate on an empty pool = %v, want nil", got)
+	}
+}

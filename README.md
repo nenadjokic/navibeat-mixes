@@ -45,6 +45,15 @@ Up to 23 playlists, every one of them optional.
 | Decade mixes | Your strongest decades, for example 1990s |
 | Wrapped 2026 | Your most played since the plugin was installed |
 
+### The contents rotate weekly, the names do not
+
+Artist Radio, Genre Radio, Daily Mix and the decade mixes draw from a pool far
+deeper than they show: 20 artists behind 5 slots, 12 genres behind 3. Every
+Monday the window moves, so you meet a different part of your own library
+instead of the same top five forever.
+
+The playlist you pinned is still that playlist. Only what is inside it changed.
+
 ### Playlist names never change
 
 This matters more than it sounds. A playlist called "Artist Radio 1: LINKIN

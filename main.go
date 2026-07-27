@@ -199,26 +199,32 @@ func generateForUser(cfg config.Config, username string) error {
 
 	// Numbered mixes. The NUMBER is the identity and the subject goes in the
 	// description, so the name never changes when the ranking does.
-	for i, g := range mixes.TopGenres(tracks, 3) {
+	// Weekly rotation. The pool is deliberately DEEPER than the window: with
+	// 20 artists showing 5 at a time, a listener meets a different five every
+	// week and the whole library comes round eventually, instead of staring at
+	// the same top five forever. The name never moves, only what is inside it.
+	week := mixes.WeekIndex(now)
+
+	for i, g := range mixes.Rotate(mixes.TopGenres(tracks, 12), week, 3) {
 		add("genreradio", "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
-			"NaviBeat Mixes: "+g+", one of the genres you play most.", "genreradio",
+			"NaviBeat Mixes: "+g+", one of the genres you play most. A different genre each week.", "genreradio",
 			mixes.BuildForGenre(tracks, g, cfg.MixSize, maxPerArtist))
 	}
-	artists := mixes.TopArtists(tracks, 5)
+	artists := mixes.Rotate(mixes.TopArtists(tracks, 20), week, 5)
 	for i, a := range artists {
 		add("artistradio", "Artist Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.ArtistRadio, i+1),
-			"NaviBeat Mixes: everything you have by "+a+".", "artistradio",
+			"NaviBeat Mixes: everything you have by "+a+". A different artist each week.", "artistradio",
 			mixes.BuildForArtist(tracks, a, cfg.MixSize))
 	}
 	for i := 0; i < 3 && i < len(artists); i++ {
 		add("dailymix", "Daily Mix "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.DailyMix, i+1),
-			"NaviBeat Mixes: built around "+artists[i]+" and what sits near it.", "dailymix",
+			"NaviBeat Mixes: built around "+artists[i]+" and what sits near it. Rotates weekly.", "dailymix",
 			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, maxPerArtist))
 	}
-	for _, d := range mixes.TopDecades(tracks, 2) {
+	for _, d := range mixes.Rotate(mixes.TopDecades(tracks, 6), week, 2) {
 		label := strconv.Itoa(d) + "s"
 		add("decade", label, "decade-"+strconv.Itoa(d),
-			"NaviBeat Mixes: your "+label+", ranked by what you actually play.", "decade",
+			"NaviBeat Mixes: your "+label+", ranked by what you actually play. Rotates weekly.", "decade",
 			mixes.BuildForDecade(tracks, d, cfg.MixSize, maxPerArtist))
 	}
 
@@ -322,9 +328,9 @@ func describe(cfg config.Config, sel mixes.Selection) string {
 			// Say so. A user who set six months and got six weeks deserves to
 			// know the library could not fill it, rather than assuming the
 			// setting was ignored.
-			return "NaviBeat Mixes: the music you loved that you have left alone longest. Refreshes weekly."
+			return "NaviBeat Mixes: the music you loved that you have left alone longest."
 		}
-		return "NaviBeat Mixes: music you loved and have not played in months. Refreshes weekly."
+		return "NaviBeat Mixes: music you loved and have not played in months."
 	}
 	if sel.Mode == mixes.ModeAffinity {
 		return "NaviBeat Mixes: your " + strings.ToLower(name) + ", built from what you actually play at this time of day."

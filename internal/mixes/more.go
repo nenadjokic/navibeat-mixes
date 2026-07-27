@@ -345,3 +345,48 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		TrackIDs: takeIDsCapped(scored, size, maxPerArtist),
 	}
 }
+
+// WeekIndex is a stable rotation counter that advances once per week.
+//
+// It is derived from the date and nothing else, so every device and every run
+// inside the same week computes the same number. That is what lets a mix
+// change its contents weekly while keeping a fixed name: the identity is the
+// number in the title, the content is a window into a deeper pool, and the
+// window only moves when the week does.
+func WeekIndex(now time.Time) int {
+	// Days since the Unix epoch, bucketed into weeks.
+	//
+	// The +3 matters and a test caught its absence: epoch day 0 is a THURSDAY,
+	// so dividing raw epoch days by 7 produces buckets that run Thursday to
+	// Wednesday. A listener would then see their mixes change midweek, which
+	// reads as the playlist being rewritten under them. Shifting by 3 aligns
+	// the boundary to Monday, so a week is a week as a person experiences it.
+	//
+	// Deliberately not ISO week numbers: those reset every January and would
+	// send the rotation lurching backwards each new year.
+	return (int(now.Unix()/(60*60*24)) + 3) / 7
+}
+
+// Rotate returns a window of `size` items starting at an offset derived from
+// the week, wrapping around the pool.
+//
+// A deeper pool than the window is the whole point: with 20 artists and a
+// window of 5, a listener meets a different five every week and the whole
+// library comes round eventually, instead of seeing the same top five forever.
+func Rotate[T any](pool []T, week, size int) []T {
+	if len(pool) == 0 || size <= 0 {
+		return nil
+	}
+	if size > len(pool) {
+		size = len(pool)
+	}
+	start := 0
+	if len(pool) > 0 {
+		start = (week * size) % len(pool)
+	}
+	out := make([]T, 0, size)
+	for i := 0; i < size; i++ {
+		out = append(out, pool[(start+i)%len(pool)])
+	}
+	return out
+}
