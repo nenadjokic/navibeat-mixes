@@ -1,0 +1,8 @@
+# Build output
+plugin.wasm
+*.ndp
+
+# Scratch Navidrome instance and sample library, never committed
+dev/data/
+dev/music/
+dev/cache/
