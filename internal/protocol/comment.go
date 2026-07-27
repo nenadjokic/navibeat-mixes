@@ -47,12 +47,29 @@ type Meta struct {
 
 const fieldCount = 6
 
-// Format renders a description: the human sentence, then the machine line.
+// Attribution is the one line of branding these playlists carry.
+//
+// It sits in the DESCRIPTION and never in the playlist name, which is the
+// whole trade-off: a name like "NaviBeat Morning" reads as an advert and gets
+// the plugin uninstalled, while a name of "Morning" that says nothing at all
+// means a user can enjoy these mixes for a year without ever learning where
+// they came from. One quiet line under the sentence that explains the mix is
+// the version a person does not resent, and it is visible in every client on
+// every playlist rather than once on an install screen nobody revisits.
+const Attribution = "Made by NaviBeat  ·  navibeat.app"
+
+// Format renders a description: the sentence a person reads, the attribution,
+// then the machine line last.
+//
+// Order is deliberate and load bearing. `playlist.comment` is declared
+// varchar(255) and merely happens not to be enforced today; if that ever
+// changes, truncation eats from the end, so it takes the machine tail first
+// and the human text last.
 func Format(human string, m Meta) string {
 	machine := strings.Join([]string{
 		Version, m.Kind, m.Slot, m.Date, m.Mode, strconv.Itoa(m.Count),
 	}, ":")
-	return human + "\n" + machine
+	return human + "\n" + Attribution + "\n" + machine
 }
 
 // Parse extracts the machine line from a description. It returns ok=false for

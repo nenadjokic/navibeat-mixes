@@ -38,6 +38,13 @@ type Config struct {
 	GenreNoiseThreshold float64
 	// EnabledMixes lists the mix keys to generate. Empty means all of them.
 	EnabledMixes []string
+	// WrappedSharing opts in to sending an aggregate recap for a shareable
+	// link. Off unless the user turns it on, and it is the ONLY thing in this
+	// plugin that can send anything anywhere.
+	WrappedSharing bool
+	// MixSwitches holds the per-mix toggles the settings form renders, keyed
+	// by slot. Absent means the user never touched that switch.
+	MixSwitches map[string]bool
 	// SlotNames maps a slot key to the human name used in the playlist title,
 	// so the mixes can speak the user's language.
 	SlotNames map[string]string
@@ -53,6 +60,8 @@ func Defaults() Config {
 		GenreDenylist:        []string{"Music", "Musik", "Musique"},
 		GenreNoiseThreshold:  0.6,
 		EnabledMixes:         nil,
+		WrappedSharing:       false,
+		MixSwitches:          map[string]bool{},
 		SlotNames: map[string]string{
 			"morning":    "Morning",
 			"afternoon":  "Afternoon",
@@ -96,16 +105,42 @@ func Load(get Getter) Config {
 	if v := strings.TrimSpace(get("enabledMixes")); v != "" {
 		c.EnabledMixes = splitList(v)
 	}
+	// Deliberately strict: only an explicit "true" enables it. A typo must
+	// leave sharing off, never on.
+	if strings.EqualFold(strings.TrimSpace(get("wrappedSharing")), "true") {
+		c.WrappedSharing = true
+	}
 	for slot := range c.SlotNames {
 		if v := strings.TrimSpace(get("name." + slot)); v != "" {
 			c.SlotNames[slot] = v
 		}
 	}
+	// Per-mix switches. Only an explicit value counts: an unset switch must
+	// leave the mix at its default rather than silently disabling it.
+	for _, m := range []struct{ key, field string }{
+		{"morning", "enableMorning"}, {"afternoon", "enableAfternoon"},
+		{"evening", "enableEvening"}, {"night", "enableNight"},
+		{"rediscover", "enableRediscover"}, {"wrapped", "enableWrapped"},
+	} {
+		v := strings.TrimSpace(get(m.field))
+		if v == "" {
+			continue
+		}
+		c.MixSwitches[m.key] = strings.EqualFold(v, "true")
+	}
 	return c
 }
 
 // MixEnabled reports whether a mix key should be generated.
+//
+// Two sources, and the per-mix switches win. The manifest renders one toggle
+// per mix, which is what a person actually sees and edits; `enabledMixes` is
+// the older comma-separated key and stays honoured so nobody's existing
+// configuration silently changes meaning under them after an upgrade.
 func (c Config) MixEnabled(key string) bool {
+	if on, set := c.MixSwitches[strings.ToLower(key)]; set {
+		return on
+	}
 	if len(c.EnabledMixes) == 0 {
 		return true
 	}

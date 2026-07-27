@@ -1,5 +1,13 @@
 # NaviBeat Mixes
 
+[![Downloads](https://img.shields.io/github/downloads/nenadjokic/navibeat-mixes/total?label=downloads&color=F47B20&style=flat-square)](../../releases)
+[![Latest release](https://img.shields.io/github/v/release/nenadjokic/navibeat-mixes?include_prereleases&label=release&color=F47B20&style=flat-square)](../../releases/latest)
+[![Navidrome](https://img.shields.io/badge/Navidrome-0.63.1%2B-F47B20?style=flat-square)](https://www.navidrome.org)
+[![Licence](https://img.shields.io/badge/licence-GPL--3.0-F47B20?style=flat-square)](LICENSE)
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/nenadjokic)
+[![PayPal](https://img.shields.io/badge/PayPal-0070BA?style=flat-square&logo=paypal&logoColor=white)](https://paypal.me/nenadjokicRS)
+
 A Navidrome plugin that builds playlists from how you actually listen: a mix
 for each part of the day, and a Rediscover mix of music you loved and have not
 played in months.
@@ -8,7 +16,7 @@ It creates ordinary playlists through the Subsonic API, so they appear in
 **every** client you use. The Navidrome web UI, Symfonium, Amperfy, play:Sub,
 NaviBeat, anything else. Nothing to install on the client side.
 
-![The mixes in the Navidrome web UI](docs/img/playlists.png)
+![A generated mix on a real library](docs/img/mix-morning-real.png)
 
 ## What you get
 
@@ -19,12 +27,13 @@ NaviBeat, anything else. Nothing to install on the client side.
 | 🟠 Evening | 17:00 to 23:00 |
 | 🟠 Night | 23:00 to 05:00 |
 | 🟠 Rediscover | Starred or often-played music you have not touched in months |
+| 🟠 Wrapped 2026 | Your most played, since the plugin was installed |
 
 Names and the prefix are configurable. They are fixed per mix and never change
-with their contents, so you get five playlists that stay five playlists rather
-than a new one every week.
+with their contents, so you get a set of playlists that stays the same set
+rather than a new one appearing every week.
 
-![A generated mix](docs/img/mix-rediscover.png)
+![The mixes alongside the rest of a library](docs/img/library-real.png)
 
 ## Honest about what it knows
 
@@ -50,9 +59,16 @@ You never have to guess which one you are looking at.
 
 ## Privacy
 
-Everything stays on your server. The plugin asks for no network permission and
-cannot reach the internet even if it wanted to. Your listening history is kept
-in Navidrome's own key-value store and is never sent anywhere.
+Your listening history lives in Navidrome's own key-value store and is never
+sent anywhere. Nothing leaves your machine unless you switch on Wrapped
+sharing, which is **off by default**.
+
+If you do switch it on, exactly one thing is sent, to `navibeat.app` and
+nowhere else: your play total, distinct track count, top artist names and your
+peak listening hour. Never a play log, never track ids, never your username,
+and nothing that identifies your server. It is one short file you can read
+before trusting it: [`internal/wrapped/share.go`](internal/wrapped/share.go),
+and a test fails the build if any other field ever appears in that payload.
 
 ## Requirements
 
@@ -61,7 +77,7 @@ in Navidrome's own key-value store and is never sent anywhere.
 
 ## Install
 
-1. Download `navibeat-mixes.ndp` from the releases page.
+1. Download `navibeat-mixes.ndp` from [the latest release](../../releases/latest).
 2. Drop it into your Navidrome plugins folder.
 3. Enable plugins in `navidrome.toml` if you have not already:
 
@@ -82,21 +98,32 @@ in Navidrome's own key-value store and is never sent anywhere.
 
 Your mixes appear within a minute of approving it, and refresh at 04:00 daily.
 
+> **If nothing appears after an upgrade:** Navidrome disables a plugin whenever
+> its file changes, because the new version may ask for different permissions.
+> Approve it again in Settings.
+
 ## Configuration
 
-Everything is optional. The defaults are chosen to work on a server nobody has
-configured.
+**Everything is a form field in Navidrome's own plugin settings.** No config
+files, no restart. Five groups:
 
-| Key | Default | What it does |
-|---|---|---|
-| `prefix` | `🟠 ` | Goes in front of every playlist name |
-| `mixSize` | `30` | Tracks per mix |
-| `rediscoverMonths` | `6` | How long ago counts as forgotten |
-| `minEventsForAffinity` | `150` | Plays needed before mixes become time-aware |
-| `genreDenylist` | `Music,Musik,Musique` | Genres to ignore, comma separated |
-| `genreNoiseThreshold` | `0.6` | Ignore any genre covering more of the library than this |
-| `enabledMixes` | all | Comma separated: `morning,afternoon,evening,night,rediscover` |
-| `name.morning` | `Morning` | Rename a mix, one key per slot |
+| Group | What you can change |
+|---|---|
+| Playlists | The name prefix and how many tracks each mix holds |
+| Which mixes to build | A switch per mix, so you can turn off any you do not want |
+| Names | Rename any mix, so they can speak your language |
+| Tuning | Rediscover age, how soon mixes become time-aware, genre filtering |
+| Sharing | Wrapped sharing, off by default |
+
+Every field has a default that works on a server nobody has touched, so you can
+install it and never open the settings at all.
+
+**If Rediscover comes out empty**, your listening is simply too current for it:
+nothing you starred has gone six months untouched. Lower the Rediscover age to
+2 or 3 months.
+
+**A mix needs at least 10 tracks to be worth making**, so an account with very
+little listening history gets no playlists rather than a four track one.
 
 ### Why the genre threshold exists
 
@@ -113,15 +140,13 @@ make          # produces navibeat-mixes.ndp
 make test     # unit tests, run natively
 ```
 
-Both toolchains work, and the Makefile picks whichever you have:
+Both toolchains work and the Makefile picks whichever you have. TinyGo is worth
+installing, it more than halves the binary that ships to every user:
 
-| Toolchain | Command | Size |
-|---|---|---|
-| TinyGo (preferred) | `tinygo build -target wasip1 -buildmode=c-shared` | smaller |
-| Standard Go | `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared` | 3.9 MB |
-
-Navidrome's documentation says TinyGo is required. Its own example Makefile
-carries both paths, and standard Go is what this build is verified with.
+| Toolchain | Size |
+|---|---|
+| TinyGo | **1.5 MB** |
+| Standard Go | 3.9 MB |
 
 ## Development
 
@@ -131,16 +156,15 @@ You need a scratch Navidrome. **Never point this at a server you care about.**
 make          # build the .ndp
 dev/up.sh     # throwaway Navidrome on port 4544, plugin installed and enabled
 dev/verify.sh # assert the plugin loaded and did its job
-python3 dev/shots.py   # regenerate the screenshots in this README
 ```
 
 Three things about the dev loop that are easy to lose an hour to:
 
 1. **A discovered plugin is not an enabled plugin.** Navidrome writes it to the
    database with `enabled=0` and waits for you to approve its permissions.
-2. **It disables itself again on every file change**, because the new build may
-   declare different permissions. Re-enable after every `make`. `dev/up.sh`
-   does this for you.
+2. **It disables itself again on every file change**, and the approval only
+   sticks if you set it *after* the server has recorded the new file's hash.
+   Approve after the restart, not before.
 3. **Do database edits with `docker exec`, inside the container.** Editing the
    SQLite file from the host while the server has it open made the server
    report `database disk image is malformed`.
@@ -155,36 +179,50 @@ docker exec -u root nd-dev sqlite3 /data/navidrome.db \
    FROM media_file ORDER BY id LIMIT 25;"
 ```
 
-That produces starred tracks last played eight months ago, which is exactly the
-Rediscover case.
-
 ## How clients can recognise these playlists
 
 A Navidrome plugin cannot serve HTTP, register a route, or draw any UI. The
-only surface it has is the playlists it creates, so each description carries a
-human sentence and one compact machine line:
+only surface it has is the playlists it creates, so each description carries
+the sentence a person reads, one line of attribution, and one machine line:
 
 ```
-Morning mix. Picks from what you play before 11am. Refreshes daily.
-nb1:timeofday:morning:2026-07-27:affinity:30
+Morning mix, built from what you actually play at this time of day. Refreshes daily.
+Made by NaviBeat  ·  navibeat.app
+nb1:timeofday:morning:2026-07-28:affinity:30
 ```
 
-Fields, colon separated: schema version, kind, slot, generation date, mode,
-track count.
+Machine line fields, colon separated: schema version, kind, slot, generation
+date, mode, track count.
 
-Clients that know nothing about this show one short extra line, which is
-harmless, and the Navidrome web UI shows the human sentence. Clients that do
-understand it can hide the machine line and render something richer.
+Clients that know nothing about this show two short extra lines, which is
+harmless. Clients that do understand it can hide the machine line and render
+something richer.
 
-The human sentence comes first deliberately. `playlist.comment` is declared
-`varchar(255)` in the schema and simply is not enforced today. If that ever
-changes, truncation removes the machine tail and leaves a description a person
+The order is deliberate. `playlist.comment` is declared `varchar(255)` in the
+schema and simply is not enforced today. If that ever changes, truncation eats
+from the end, taking the machine tail first and leaving a description a person
 can still read.
 
 If you are writing a client: key your detection on the `nb1:` line, never on
 the playlist name, because the prefix is user-configurable. Treat anything
 malformed or truncated as "not mine" so you never restyle a playlist somebody
 made by hand.
+
+## Support
+
+This plugin is free and always will be. If it earns you a few good mornings:
+
+[<img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee">](https://buymeacoffee.com/nenadjokic)
+
+[<img src="https://img.shields.io/badge/PayPal-0070BA?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal">](https://paypal.me/nenadjokicRS)
+
+## About NaviBeat
+
+NaviBeat is a music player for your own Navidrome or OpenSubsonic server, on
+iPhone, iPad, Mac, Apple TV, Apple Watch and Linux. This plugin is a separate,
+free, open-source project that works with every client, not just that one.
+
+[navibeat.app](https://navibeat.app)
 
 ## Licence
 

@@ -48,6 +48,13 @@ const (
 	// One artist may contribute at most this many tracks to a mix. Thirty
 	// tracks by one artist is an album, not a mix.
 	maxPerArtist = 3
+	// A mix has to be worth opening. Below this, the user simply has not
+	// listened to enough for the plugin to say anything useful, and a four
+	// track "Morning mix" is not a mix, it is clutter with a name on it.
+	// Found on a real family server, where an account with almost no history
+	// produced four-track playlists that cluttered the admin's view of their
+	// own library.
+	minMixSize = 10
 
 	// The control playlist is polled far more often than mixes are generated,
 	// because a person who presses "re-roll" is standing there waiting.
@@ -157,7 +164,7 @@ func generateForUser(cfg config.Config, username string) error {
 		})
 		sel.Slot = mixes.Slot(mixes.WrappedSlot(year))
 		writeNamed(client, cfg.Prefix+mixes.WrappedName(year), sel,
-			"Your most played music since NaviBeat Mixes was installed. Grows through the year.",
+			"NaviBeat Mixes: your most played, since the plugin was installed. Grows through the year.",
 			"wrapped", now, username)
 	}
 
@@ -184,8 +191,8 @@ func generateForUser(cfg config.Config, username string) error {
 // yesterday and finds it blank has lost something, and an empty playlist
 // communicates a bug even when the truth is only "not enough data yet".
 func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, now time.Time, username string) {
-	if len(sel.TrackIDs) == 0 {
-		logf("user %s: a mix selected nothing, leaving the existing playlist untouched", username)
+	if len(sel.TrackIDs) < minMixSize {
+		logf("user %s: not enough listening yet for a useful mix, leaving it alone", username)
 		return
 	}
 
@@ -194,7 +201,7 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 
 // writeNamed does the actual create-or-update for one playlist.
 func writeNamed(client *library.Client, name string, sel mixes.Selection, human, kind string, now time.Time, username string) {
-	if len(sel.TrackIDs) == 0 {
+	if len(sel.TrackIDs) < minMixSize {
 		return
 	}
 	id, err := client.EnsurePlaylist(name)
@@ -231,18 +238,26 @@ func kindFor(slot mixes.Slot) string {
 	return "timeofday"
 }
 
-// describe writes the sentence a person reads. It states the mode in plain
-// words, because a user whose mixes are not yet personal deserves to know that
-// is why rather than concluding the feature is broken.
+// describe writes the sentence a person reads.
+//
+// THE NAME COMES FIRST, and that is a decision taken from a screenshot rather
+// than from taste. Navidrome's web UI truncates a playlist description to a
+// single line, so an attribution sitting on line two is invisible in exactly
+// the place most people look at these playlists. Leading with it is the only
+// placement that survives truncation in every client.
+//
+// It still says the useful thing immediately afterwards: a user whose mixes
+// are not yet personal deserves to know that is why, rather than concluding
+// the feature is broken.
 func describe(cfg config.Config, sel mixes.Selection) string {
 	name := cfg.SlotNames[string(sel.Slot)]
 	if sel.Slot == mixes.Rediscover {
-		return "Music you loved and have not played in a while. Refreshes weekly."
+		return "NaviBeat Mixes: music you loved and have not played in months. Refreshes weekly."
 	}
 	if sel.Mode == mixes.ModeAffinity {
-		return name + " mix, built from what you actually play at this time of day. Refreshes daily."
+		return "NaviBeat Mixes: your " + strings.ToLower(name) + ", built from what you actually play at this time of day."
 	}
-	return name + " mix. Still learning when you listen to what, so for now this is built from your most played music. It gets more personal over the next few weeks."
+	return "NaviBeat Mixes: your " + strings.ToLower(name) + ". Still learning when you listen, so for now this is your most played music."
 }
 
 // Collector: the Scrobbler half.
