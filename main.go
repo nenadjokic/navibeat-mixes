@@ -459,6 +459,18 @@ func pollControl() error {
 			}
 		}
 		if target == nil {
+			// The client creates the mailbox (it has no way to know this
+			// server's configured prefix), so a rename or a prefix change
+			// must not orphan it: fall back to the machine line, which is
+			// the part of the contract neither side can get wrong.
+			for i := range playlists {
+				if meta, ok := protocol.Parse(playlists[i].Comment); ok && meta.Kind == "control" {
+					target = &playlists[i]
+					break
+				}
+			}
+		}
+		if target == nil {
 			// The mailbox is only created once a client asks for it, so an
 			// unused server never grows a playlist nobody wanted.
 			continue
