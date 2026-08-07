@@ -238,6 +238,39 @@ the playlist name, because the prefix is user-configurable. Treat anything
 malformed or truncated as "not mine" so you never restyle a playlist somebody
 made by hand.
 
+## What it looks like in NaviBeat
+
+**This plugin is not a NaviBeat feature and it never became one.** It writes
+ordinary playlists through the Subsonic API, so the Navidrome web UI, Symfonium,
+Amperfy, play:Sub and anything else all see them, and nothing is installed on the
+client side. That is the whole design and it is not going to change.
+
+What NaviBeat does is **read the machine line described above** instead of
+printing it. Same playlists, same server, one client that understands what it is
+looking at.
+
+![The NaviBeat Mixes shelf on macOS](docs/img/navibeat-mixes-shelf.png)
+
+That screenshot was taken at 20:29, which is the point of the first tile.
+
+- **The mix for the current part of the day leads.** Evening is first in the
+  evening, Morning is first in the morning. The shelf reorders itself rather than
+  making you find the right one.
+- **Each mix draws its own generated cover** instead of the four-square mosaic a
+  client falls back to when a playlist has no artwork.
+- **One line of state under each tile.** "Still learning you" while the server is
+  still building that mix from raw popularity, and "Updated today" or "Updated
+  yesterday" once it is running on your own listening. It is the only fact about
+  a generated playlist worth a line.
+- **The shelf does not exist unless the plugin does.** No empty rail, no promise
+  of a feature you have not installed.
+
+![Per-mix covers and the freshness line](docs/img/navibeat-mixes-tiles.png)
+
+Every other client shows these playlists as rows with two extra lines of text
+under them, which is harmless and was designed to be. If you write a client and
+want the same, the format is documented above and you are welcome to it.
+
 ## Support
 
 This plugin is free and always will be. If it earns you a few good mornings:
