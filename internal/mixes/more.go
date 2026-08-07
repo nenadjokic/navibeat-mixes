@@ -47,8 +47,27 @@ func BuildNewMusic(tracks []Track, size, maxPerArtist int) Selection {
 		// Candidates arrive newest-first from the newest album list, so
 		// position is the recency signal. Using a date here would need one
 		// that the API does not expose per track.
-		scored = append(scored, scoredTrack{track: t, score: len(tracks) - i})
+		score := len(tracks) - i
+		// Sly777 (issue #1): "on new music playlist, there were many songs I
+		// listened before." New here has always meant new to the LIBRARY, and
+		// on a library you have been listening to for years that is not what
+		// the name promises. Something already played is pushed behind
+		// everything unheard rather than dropped, because a small or
+		// thoroughly-played library would otherwise get an empty mix, which is
+		// the failure the Rediscover builder above already learned to avoid.
+		if t.PlayCount > 0 {
+			score -= len(tracks)
+		}
+		scored = append(scored, scoredTrack{track: t, score: score})
 	}
+	// Sorting is what makes the score above mean anything. Recency order is
+	// preserved inside each group, because the penalty is a constant.
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].track.ID < scored[j].track.ID
+	})
 	return Selection{
 		Slot:     NewMusic,
 		Mode:     ModeFallback,
@@ -148,11 +167,12 @@ func BuildDiscovery(tracks []Track, now time.Time, minGap time.Duration, size, m
 func TopGenres(tracks []Track, n int) []string {
 	plays := map[string]int{}
 	for _, t := range tracks {
-		g := strings.TrimSpace(t.Genre)
-		if g == "" {
-			continue
+		// Every genre the track carries, not just the legacy first one. A
+		// library where Funk is almost always a SECOND genre used to rank
+		// Funk near zero and never build it a radio.
+		for _, g := range t.AllGenres() {
+			plays[g] += t.PlayCount + 1 // presence counts a little, plays count more
 		}
-		plays[g] += t.PlayCount + 1 // presence counts a little, plays count more
 	}
 	type gp struct {
 		name string
@@ -213,7 +233,7 @@ func TopArtists(tracks []Track, n int) []string {
 func BuildForGenre(tracks []Track, genre string, size, maxPerArtist int) Selection {
 	scored := make([]scoredTrack, 0, len(tracks))
 	for _, t := range tracks {
-		if !strings.EqualFold(strings.TrimSpace(t.Genre), genre) {
+		if !t.HasGenre(genre) {
 			continue
 		}
 		s := t.PlayCount + 1
@@ -318,8 +338,11 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 	// without wandering off into unrelated music.
 	genres := map[string]bool{}
 	for _, t := range tracks {
-		if strings.EqualFold(t.Artist, anchor) && t.Genre != "" {
-			genres[strings.ToLower(t.Genre)] = true
+		if !strings.EqualFold(t.Artist, anchor) {
+			continue
+		}
+		for _, g := range t.AllGenres() {
+			genres[strings.ToLower(g)] = true
 		}
 	}
 
@@ -329,7 +352,7 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		switch {
 		case strings.EqualFold(t.Artist, anchor):
 			s = 20 + t.PlayCount
-		case t.Genre != "" && genres[strings.ToLower(t.Genre)]:
+		case t.sharesAnyGenre(genres):
 			s = t.PlayCount + 1
 		default:
 			continue

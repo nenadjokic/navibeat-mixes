@@ -58,15 +58,72 @@ const (
 
 // Track is the subset of a song this package reasons about.
 type Track struct {
-	ID        string
-	Title     string
-	Artist    string
-	Genre     string
+	ID     string
+	Title  string
+	Artist string
+	// Genre is the legacy single-value Subsonic field, kept because every
+	// server still sends it and some send nothing else.
+	Genre string
+	// Genres is OpenSubsonic's `genres` array, which exists precisely because
+	// a track has more than one. A track tagged "Hip-Hop; Funk" reports only
+	// "Hip-Hop" in the legacy field, so a Funk radio built from `Genre` alone
+	// silently skipped it. That is issue #1 from Sly777: a genre radio named
+	// Funk that contained one artist, on a library full of funk.
+	Genres    []string
 	Year      int
 	PlayCount int
 	// LastPlayed is the zero time when the track has never been played.
 	LastPlayed time.Time
 	Starred    bool
+}
+
+// AllGenres is every genre this track carries, trimmed and without blanks.
+//
+// Prefers the OpenSubsonic array and falls back to the legacy single value, so
+// a server that sends only `genre` behaves exactly as before. Everything that
+// reasons about genre goes through here, so there is one answer to "what is
+// this track's genre" rather than six.
+func (t Track) AllGenres() []string {
+	source := t.Genres
+	if len(source) == 0 {
+		source = []string{t.Genre}
+	}
+	out := make([]string, 0, len(source))
+	seen := make(map[string]bool, len(source))
+	for _, g := range source {
+		g = strings.TrimSpace(g)
+		if g == "" || seen[strings.ToLower(g)] {
+			continue
+		}
+		seen[strings.ToLower(g)] = true
+		out = append(out, g)
+	}
+	return out
+}
+
+// HasGenre is the membership test the radios need, case-insensitive.
+func (t Track) HasGenre(genre string) bool {
+	genre = strings.TrimSpace(genre)
+	if genre == "" {
+		return false
+	}
+	for _, g := range t.AllGenres() {
+		if strings.EqualFold(g, genre) {
+			return true
+		}
+	}
+	return false
+}
+
+// sharesAnyGenre reports whether the track sits in any of the given genres,
+// which are already lower-cased by the caller.
+func (t Track) sharesAnyGenre(set map[string]bool) bool {
+	for _, g := range t.AllGenres() {
+		if set[strings.ToLower(g)] {
+			return true
+		}
+	}
+	return false
 }
 
 // SlotAffinity is how often a track was played inside each slot, accumulated
@@ -268,7 +325,9 @@ func FilterGenres(tracks []Track, denylist []string, threshold float64) []Track 
 
 	counts := map[string]int{}
 	for _, t := range tracks {
-		counts[strings.ToLower(t.Genre)]++
+		for _, g := range t.AllGenres() {
+			counts[strings.ToLower(g)]++
+		}
 	}
 	total := float64(len(tracks))
 	for g, n := range counts {
@@ -282,8 +341,21 @@ func FilterGenres(tracks []Track, denylist []string, threshold float64) []Track 
 		// A track is kept, only its genre stops being usable as a signal.
 		// Dropping the track entirely would empty the library on exactly the
 		// servers this rule exists for.
-		if deny[strings.ToLower(t.Genre)] {
+		// Strip only the genres that carry no information, and keep the rest.
+		// The old code blanked the whole track's genre when its ONE value was
+		// denied, which on a multi-genre library threw away the useful values
+		// alongside the useless one.
+		kept := make([]string, 0, len(t.Genres))
+		for _, g := range t.AllGenres() {
+			if !deny[strings.ToLower(g)] {
+				kept = append(kept, g)
+			}
+		}
+		t.Genres = kept
+		if len(kept) == 0 {
 			t.Genre = ""
+		} else {
+			t.Genre = kept[0]
 		}
 		out = append(out, t)
 	}

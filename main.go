@@ -45,9 +45,6 @@ const (
 	// Cap on stored per-track history, so state cannot grow without bound on
 	// a very large library.
 	histTrackCap = 5000
-	// One artist may contribute at most this many tracks to a mix. Thirty
-	// tracks by one artist is an album, not a mix.
-	maxPerArtist = 3
 	// A mix has to be worth opening. Below this, the user simply has not
 	// listened to enough for the plugin to say anything useful, and a four
 	// track "Morning mix" is not a mix, it is clutter with a name on it.
@@ -179,23 +176,23 @@ func generateForUser(cfg config.Config, username string) error {
 
 	add("newmusic", "New Music", "newmusic",
 		"NaviBeat Mixes: the newest additions to your library.", "newmusic",
-		mixes.BuildNewMusic(tracks, cfg.MixSize, maxPerArtist))
+		mixes.BuildNewMusic(tracks, cfg.MixSize, cfg.MaxPerArtist))
 
 	add("loved", "Your Loved Songs", "loved",
 		"NaviBeat Mixes: everything you starred, oldest favourite first.", "loved",
-		mixes.BuildLovedSongs(tracks, cfg.MixSize, maxPerArtist))
+		mixes.BuildLovedSongs(tracks, cfg.MixSize, cfg.MaxPerArtist))
 
 	add("onrepeat", "On Repeat", "onrepeat",
 		"NaviBeat Mixes: what you have been playing over and over lately.", "onrepeat",
-		mixes.BuildOnRepeat(tracks, now, 30*24*time.Hour, cfg.MixSize, maxPerArtist))
+		mixes.BuildOnRepeat(tracks, now, 30*24*time.Hour, cfg.MixSize, cfg.MaxPerArtist))
 
 	add("essentials", "Your Essentials", "essentials",
 		"NaviBeat Mixes: your most played of all time.", "essentials",
-		mixes.BuildEssentials(tracks, cfg.MixSize, maxPerArtist))
+		mixes.BuildEssentials(tracks, cfg.MixSize, cfg.MaxPerArtist))
 
 	add("discovery", "Weekly Discovery", "discovery",
 		"NaviBeat Mixes: music you own, played once or twice, and then forgot.", "discovery",
-		mixes.BuildDiscovery(tracks, now, 90*24*time.Hour, cfg.MixSize, maxPerArtist))
+		mixes.BuildDiscovery(tracks, now, 90*24*time.Hour, cfg.MixSize, cfg.MaxPerArtist))
 
 	// Numbered mixes. The NUMBER is the identity and the subject goes in the
 	// description, so the name never changes when the ranking does.
@@ -208,7 +205,7 @@ func generateForUser(cfg config.Config, username string) error {
 	for i, g := range mixes.Rotate(mixes.TopGenres(tracks, 12), week, 3) {
 		add("genreradio", "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
 			"NaviBeat Mixes: "+g+", one of the genres you play most. A different genre each week.", "genreradio",
-			mixes.BuildForGenre(tracks, g, cfg.MixSize, maxPerArtist))
+			mixes.BuildForGenre(tracks, g, cfg.MixSize, cfg.MaxPerArtist))
 	}
 	artists := mixes.Rotate(mixes.TopArtists(tracks, 20), week, 5)
 	for i, a := range artists {
@@ -219,19 +216,19 @@ func generateForUser(cfg config.Config, username string) error {
 	for i := 0; i < 3 && i < len(artists); i++ {
 		add("dailymix", "Daily Mix "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.DailyMix, i+1),
 			"NaviBeat Mixes: built around "+artists[i]+" and what sits near it. Rotates weekly.", "dailymix",
-			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, maxPerArtist))
+			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, cfg.MaxPerArtist))
 	}
 	for _, d := range mixes.Rotate(mixes.TopDecades(tracks, 6), week, 2) {
 		label := strconv.Itoa(d) + "s"
 		add("decade", label, "decade-"+strconv.Itoa(d),
 			"NaviBeat Mixes: your "+label+", ranked by what you actually play. Rotates weekly.", "decade",
-			mixes.BuildForDecade(tracks, d, cfg.MixSize, maxPerArtist))
+			mixes.BuildForDecade(tracks, d, cfg.MixSize, cfg.MaxPerArtist))
 	}
 
 	if cfg.MixEnabled("wrapped") {
 		year := mixes.YearOf(now)
 		sel := mixes.BuildWrapped(tracks, mixes.WrappedOptions{
-			Plays: state.TotalPlays(), Size: cfg.MixSize, MaxPerArtist: maxPerArtist,
+			Plays: state.TotalPlays(), Size: cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist,
 		})
 		sel.Slot = mixes.Slot(mixes.WrappedSlot(year))
 		plan = append(plan, entry{"wrapped", cfg.Prefix + mixes.WrappedName(year), mixes.WrappedSlot(year),
@@ -243,7 +240,7 @@ func generateForUser(cfg config.Config, username string) error {
 		sel := mixes.BuildTimeMix(tracks, mixes.TimeMixOptions{
 			Slot: slot, Affinity: affinity, EventCount: state.Events,
 			MinEventsForAffinity: cfg.MinEventsForAffinity,
-			Size:                 cfg.MixSize, MaxPerArtist: maxPerArtist,
+			Size:                 cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist,
 		})
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
 	}

@@ -68,3 +68,20 @@ func TestTheOlderEnabledMixesKeyStillWorks(t *testing.T) {
 		t.Errorf("enabledMixes was ignored: %+v", c.EnabledMixes)
 	}
 }
+
+// Sly777, issue #1: the per-artist cap used to be a constant in main.go, so
+// "I would like to have 1 song per musician" had no answer short of a rebuild.
+func TestMaxPerArtistDefaultsToThreeAndIsConfigurable(t *testing.T) {
+	if Defaults().MaxPerArtist != 3 {
+		t.Fatalf("default changed, every existing install would shift: %d", Defaults().MaxPerArtist)
+	}
+	c := Load(func(k string) string {
+		if k == "maxPerArtist" {
+			return "1"
+		}
+		return ""
+	})
+	if c.MaxPerArtist != 1 {
+		t.Fatalf("setting ignored, got %d", c.MaxPerArtist)
+	}
+}

@@ -36,11 +36,35 @@ type song struct {
 	Title     string `json:"title"`
 	Artist    string `json:"artist"`
 	Genre     string `json:"genre"`
+	// OpenSubsonic's multi-value genre list. The legacy `genre` above carries
+	// only ONE, so a track tagged "Hip-Hop; Funk" reports Hip-Hop and nothing
+	// else, and every genre-shaped mix silently missed it. Servers that do not
+	// implement the extension simply send nothing here and the legacy field
+	// still works. Spec: opensubsonic.netlify.app/docs/responses/child/
+	Genres []struct {
+		Name string `json:"name"`
+	} `json:"genres"`
 	Year      int    `json:"year"`
 	PlayCount int    `json:"playCount"`
 	Played    string `json:"played"`
 	Starred   string `json:"starred"`
 	Duration  int    `json:"duration"`
+}
+
+// genreNames flattens the OpenSubsonic array. Returns nil when the server did
+// not send one, which is the signal the mixes package uses to fall back to the
+// legacy single value.
+func (s song) genreNames() []string {
+	if len(s.Genres) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(s.Genres))
+	for _, g := range s.Genres {
+		if g.Name != "" {
+			out = append(out, g.Name)
+		}
+	}
+	return out
 }
 
 type envelope struct {
@@ -123,6 +147,7 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 				Title:      s.Title,
 				Artist:     s.Artist,
 				Genre:      s.Genre,
+				Genres:     s.genreNames(),
 				Year:       s.Year,
 				PlayCount:  s.PlayCount,
 				LastPlayed: parseTime(s.Played),

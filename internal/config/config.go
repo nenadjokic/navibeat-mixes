@@ -23,6 +23,13 @@ type Config struct {
 	Prefix string
 	// MixSize is how many tracks each mix holds.
 	MixSize int
+	// MaxPerArtist caps how many tracks one artist may contribute to a mix.
+	// Sly777 (issue #1): "on genre radios, plugin adds 3-4 songs per specific
+	// album from the specific musician. I would like to have 1 song per
+	// musician." Both wants are legitimate and they contradict each other, so
+	// it is a setting rather than a new hardcoded number. Default 3 keeps
+	// every existing install byte-identical.
+	MaxPerArtist int
 	// RediscoverMonths is how old a track's last play must be before
 	// Rediscover will consider it.
 	RediscoverMonths int
@@ -55,6 +62,7 @@ func Defaults() Config {
 	return Config{
 		Prefix:               "\U0001F7E0 ", // large orange circle, the NaviBeat brand colour
 		MixSize:              30,
+		MaxPerArtist:         3,
 		RediscoverMonths:     6,
 		MinEventsForAffinity: 150,
 		GenreDenylist:        []string{"Music", "Musik", "Musique"},
@@ -87,6 +95,9 @@ func Load(get Getter) Config {
 	}
 	if n, ok := positiveInt(get("mixSize")); ok {
 		c.MixSize = n
+	}
+	if n, ok := positiveInt(get("maxPerArtist")); ok {
+		c.MaxPerArtist = n
 	}
 	if n, ok := positiveInt(get("rediscoverMonths")); ok {
 		c.RediscoverMonths = n
