@@ -5,8 +5,11 @@
 # the same either way. See README for the measured size difference.
 NDP    := navibeat-mixes.ndp
 TINYGO := $(shell command -v tinygo 2> /dev/null)
+# The ONE source of truth for the version. Navidrome shows this string in its
+# Plugins list, so it is what a user reads back to you in a bug report.
+VERSION := $(shell python3 -c "import json;print(json.load(open('manifest.json'))['version'])")
 
-.PHONY: all test clean check-emdash
+.PHONY: all test clean check-emdash check-version release-tag
 
 all: $(NDP)
 
@@ -34,6 +37,34 @@ test:
 check-emdash:
 	@! grep -rnP '\x{2014}' --include='*' . 2>/dev/null || (echo "em dash found"; exit 1)
 	@echo "no em dash"
+
+# THE GUARD, and it exists because the two drifted for four releases.
+#
+# The git tag and the version inside manifest.json are independent strings and
+# nothing ever compared them. Measured 2026-08-07:
+#
+#   tag v0.1.0 -> manifest 0.1.0   ok
+#   tag v0.3.0 -> manifest 0.3.0   ok
+#   tag v0.4.0 -> manifest 0.3.0   DRIFT
+#   tag v0.6.0 -> manifest 0.5.0   DRIFT, and this is the newest release
+#
+# The consequence is not cosmetic. Navidrome shows the MANIFEST version in its
+# Plugins list, so a user on the latest release reads "0.5.0" while the repo
+# calls it v0.6.0, and neither of you can tell whether they are up to date. A
+# reporter saying "it does not work well at this version" then means nothing.
+check-version:
+	@test -n "$(VERSION)" || (echo "manifest.json has no version"; exit 1)
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
+		echo "tag v$(VERSION) already exists; bump manifest.json first"; exit 1; \
+	fi
+	@echo "manifest version $(VERSION), tag v$(VERSION) is free"
+
+# Tag from the manifest rather than by hand, so they cannot disagree again.
+# Pushing the tag and cutting the release stay manual on purpose: publishing is
+# a decision, not a build step.
+release-tag: check-version test check-emdash $(NDP)
+	git tag "v$(VERSION)"
+	@echo "tagged v$(VERSION). Now: git push origin v$(VERSION) && gh release create v$(VERSION) $(NDP)"
 
 clean:
 	rm -f plugin.wasm $(NDP)
