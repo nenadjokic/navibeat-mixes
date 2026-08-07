@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.5.1",
+  "version": "0.6.1",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps.",
   "website": "https://navibeat.app",
   "permissions": {
