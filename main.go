@@ -250,7 +250,7 @@ func generateForUser(cfg config.Config, username string) error {
 		if human == "" {
 			human = describe(cfg, e.sel)
 		}
-		writeNamed(client, e.name, e.sel, human, e.kind, now, username)
+		writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
 	}
 	return nil
 }
@@ -265,11 +265,11 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 		return
 	}
 
-	writeNamed(client, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
+	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
 }
 
 // writeNamed does the actual create-or-update for one playlist.
-func writeNamed(client *library.Client, name string, sel mixes.Selection, human, kind string, now time.Time, username string) {
+func writeNamed(client *library.Client, cfg config.Config, name string, sel mixes.Selection, human, kind string, now time.Time, username string) {
 	if len(sel.TrackIDs) < minMixSize {
 		return
 	}
@@ -295,6 +295,34 @@ func writeNamed(client *library.Client, name string, sel mixes.Selection, human,
 		Mode:  string(sel.Mode),
 		Count: len(sel.TrackIDs),
 	})
+	// #F531: tell NaviBeat how to draw this one, on its own line so the
+	// descriptor above still parses on every client already in the field.
+	//
+	// ONLY when buttons are actually switched on. This is not an optimisation,
+	// it is the thing that keeps the rollout safe: a NaviBeat old enough not to
+	// know the nbui1 namespace renders any line it does not recognise as part
+	// of the description, so writing a button line on a server that is not
+	// using buttons would show "nbui1:btn:sunrise:F2A65A:Morning" to every one
+	// of those users for no benefit at all. A server that opts in accepts that
+	// trade knowingly; a server that never touches the setting must not pay it.
+	//
+	// The key is the SLOT for time-of-day mixes and the KIND for everything
+	// else: all four time-of-day mixes share one kind, so keying by kind would
+	// give morning and night the same sun and rebuild exactly the sameness
+	// this feature exists to remove.
+	if cfg.MixStyle == string(protocol.StyleButton) {
+		buttonKey := kind
+		if kind == "timeofday" {
+			buttonKey = string(sel.Slot)
+		}
+		icon, colour := cfg.ButtonFor(buttonKey)
+		// The label drops the prefix the playlist name carries: a button is too
+		// narrow to spend on an emoji that only exists to group a list.
+		label := cfg.SlotNames[string(sel.Slot)]
+		comment = protocol.AppendLine(comment, protocol.FormatButton(protocol.Button{
+			Glyph: icon, Color: colour, Label: label,
+		}))
+	}
 	if err := client.SetComment(id, comment); err != nil {
 		logf("user %s: writing description: %v", username, err)
 	}
@@ -473,6 +501,21 @@ func pollControl() error {
 			continue
 		}
 
+		// #F531: the control playlist is where the server-wide style lives.
+		// Published here rather than on a mix because clients find this
+		// playlist by machine line and EXCLUDE it from the shelf, so this line
+		// is never rendered to a person even by a client too old to know it.
+		//
+		// Written only when it actually differs, because this poll runs every
+		// five minutes and a needless SetComment on each one would be a write
+		// to every user's database forever.
+		if current, ok := protocol.ParseStyle(target.Comment); !ok || string(current) != cfg.MixStyle {
+			if err := client.SetComment(target.ID,
+				protocol.AppendLine(target.Comment, protocol.FormatStyle(protocol.Style(cfg.MixStyle)))); err != nil {
+				logf("publishing the mix style: %v", err)
+			}
+		}
+
 		cmd, ok := protocol.ParseCommand(target.Comment)
 		if !ok {
 			continue
@@ -494,10 +537,15 @@ func pollControl() error {
 
 		// Clear the command and leave the result in its place, so the mailbox
 		// is empty and the client can see its request was handled.
-		_ = client.SetComment(target.ID, protocol.Format(
+		// The comment is rebuilt from scratch here, so the style line has to be
+		// put back or every executed command would silently un-configure the
+		// shelf until the next poll noticed.
+		rebuilt := protocol.Format(
 			"NaviBeat uses this playlist to talk to the Mixes plugin. Safe to delete if you do not use NaviBeat.",
 			protocol.Meta{Kind: "control", Slot: "control", Date: time.Now().Format("2006-01-02"), Mode: "ready", Count: 0},
-		)+"\n"+protocol.FormatResult(result, cmd.Slot, cmd.Nonce))
+		) + "\n" + protocol.FormatResult(result, cmd.Slot, cmd.Nonce)
+		rebuilt = protocol.AppendLine(rebuilt, protocol.FormatStyle(protocol.Style(cfg.MixStyle)))
+		_ = client.SetComment(target.ID, rebuilt)
 	}
 	return nil
 }

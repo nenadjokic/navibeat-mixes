@@ -55,6 +55,120 @@ type Config struct {
 	// SlotNames maps a slot key to the human name used in the playlist title,
 	// so the mixes can speak the user's language.
 	SlotNames map[string]string
+	// MixStyle is how NaviBeat clients should DRAW these playlists: the
+	// generated NaviBeat artwork, the server's own album mosaic, or a compact
+	// row of buttons.
+	//
+	// This lives here rather than in the NaviBeat app on purpose. A setting
+	// inside the app for a feature that lives in this plugin is a dead switch
+	// for everyone who never installed the plugin, which is exactly what the
+	// app's old "NaviBeat covers" toggle became.
+	MixStyle string
+	// ButtonIcons and ButtonColors override the built-in look of one mix
+	// family's button, keyed by mix kind ("timeofday" uses the SLOT instead,
+	// because all four share one kind and would otherwise get one icon).
+	// Absent means "use the built-in default", which is why an untouched
+	// server still gets a varied shelf.
+	ButtonIcons  map[string]string
+	ButtonColors map[string]string
+}
+
+// DefaultButtonIcons is the built-in icon per mix family, and the reason a
+// server nobody has configured still gets a shelf that reads as several
+// different things rather than one thing repeated. That repetition is the
+// complaint this whole feature came from.
+//
+// Time of day is keyed by SLOT, not kind: all four time-of-day mixes share
+// kind "timeofday", so keying by kind would give morning and night the same
+// sun and rebuild the sameness.
+var DefaultButtonIcons = map[string]string{
+	"morning":     "sunrise",
+	"afternoon":   "sun",
+	"evening":     "sunset",
+	"night":       "moon",
+	"rediscover":  "clock",
+	"decade":      "clock",
+	"newmusic":    "sparkles",
+	"loved":       "heart",
+	"onrepeat":    "repeat",
+	"essentials":  "star",
+	"discovery":   "compass",
+	"genreradio":  "radio",
+	"artistradio": "radio",
+	"dailymix":    "shuffle",
+	"wrapped":     "gift",
+}
+
+// DefaultButtonColors matches the Apple client's own defaults, so a mix looks
+// the same on a phone whether or not the server ever set a colour.
+var DefaultButtonColors = map[string]string{
+	"sunrise":  "F2A65A",
+	"sun":      "E8A317",
+	"sunset":   "E2725B",
+	"moon":     "6C7BA8",
+	"sparkles": "7C5CFF",
+	"compass":  "2E9E8F",
+	"heart":    "E0567A",
+	"star":     "D4A017",
+	"repeat":   "4C8DD9",
+	"radio":    "3F9E5A",
+	"shuffle":  "9B6BD6",
+	"clock":    "8A8577",
+	"gift":     "D96BA0",
+	"waveform": "6E8AA6",
+}
+
+// ButtonFor resolves the icon and colour for one playlist.
+//
+// `key` is the slot for time-of-day mixes and the kind for everything else;
+// the caller passes whichever identifies the family, and a user override on
+// that key wins over the built-in.
+func (c Config) ButtonFor(key string) (icon, color string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	icon = strings.ToLower(strings.TrimSpace(c.ButtonIcons[key]))
+	if icon == "" {
+		icon = DefaultButtonIcons[key]
+	}
+	if icon == "" {
+		icon = "waveform"
+	}
+	color = normaliseHex(c.ButtonColors[key])
+	if color == "" {
+		color = DefaultButtonColors[icon]
+	}
+	if color == "" {
+		color = DefaultButtonColors["waveform"]
+	}
+	return icon, color
+}
+
+// normaliseHex accepts what a person actually types into a colour field and
+// returns six uppercase hex digits, or "" when it cannot. A leading '#' is the
+// commonest input and the one thing the wire format does NOT allow, so
+// stripping it here is worth more than rejecting it.
+func normaliseHex(raw string) string {
+	s := strings.ToUpper(strings.TrimSpace(raw))
+	s = strings.TrimPrefix(s, "#")
+	if len(s) == 3 {
+		// "F00" is what a CSS-literate user types.
+		var expanded strings.Builder
+		for _, r := range s {
+			expanded.WriteRune(r)
+			expanded.WriteRune(r)
+		}
+		s = expanded.String()
+	}
+	if len(s) != 6 {
+		return ""
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'A' && r <= 'F':
+		default:
+			return ""
+		}
+	}
+	return s
 }
 
 // Defaults returns the configuration used when nothing is set.
@@ -77,6 +191,11 @@ func Defaults() Config {
 			"night":      "Night",
 			"rediscover": "Rediscover",
 		},
+		// The default is the artwork every existing install already sees, so
+		// upgrading the plugin never changes how anybody's shelf looks.
+		MixStyle:     "cover",
+		ButtonIcons:  map[string]string{},
+		ButtonColors: map[string]string{},
 	}
 }
 
@@ -143,6 +262,31 @@ func Load(get Getter) Config {
 			continue
 		}
 		c.MixSwitches[m.key] = strings.EqualFold(v, "true")
+	}
+	// How clients should draw the mixes. An unrecognised value is ignored
+	// rather than written to the wire: a typo here would otherwise reach every
+	// client as an instruction none of them understand.
+	if v := strings.ToLower(strings.TrimSpace(get("mixStyle"))); v != "" {
+		switch v {
+		case "cover", "button", "mosaic":
+			c.MixStyle = v
+		}
+	}
+	// Per-family button overrides. Keyed by slot for time-of-day (all four
+	// share one kind) and by kind for everything else, which is exactly the
+	// key ButtonFor resolves against.
+	for _, key := range []string{
+		"morning", "afternoon", "evening", "night",
+		"rediscover", "decade", "newmusic", "loved", "onrepeat",
+		"essentials", "discovery", "genreradio", "artistradio",
+		"dailymix", "wrapped",
+	} {
+		if v := strings.TrimSpace(get("icon." + key)); v != "" {
+			c.ButtonIcons[key] = v
+		}
+		if v := strings.TrimSpace(get("color." + key)); v != "" {
+			c.ButtonColors[key] = v
+		}
 	}
 	return c
 }

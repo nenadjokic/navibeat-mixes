@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.6.2",
-  "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps.",
+  "version": "0.7.0",
+  "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
     "scheduler": {
@@ -185,6 +185,452 @@
           "type": "boolean",
           "title": "Decade mixes",
           "default": true
+        },
+        "mixStyle": {
+          "type": "string",
+          "title": "How NaviBeat draws these playlists",
+          "enum": [
+            "cover",
+            "button",
+            "mosaic"
+          ],
+          "default": "cover",
+          "description": "Only NaviBeat reads this; other clients are unaffected. \"cover\" is NaviBeat's own generated artwork, \"button\" is a compact row of buttons with an icon instead of artwork, \"mosaic\" leaves the server's usual 2x2 album grid alone."
+        },
+        "icon.morning": {
+          "type": "string",
+          "title": "Icon: Morning",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.morning": {
+          "type": "string",
+          "title": "Colour: Morning",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.afternoon": {
+          "type": "string",
+          "title": "Icon: Afternoon",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.afternoon": {
+          "type": "string",
+          "title": "Colour: Afternoon",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.evening": {
+          "type": "string",
+          "title": "Icon: Evening",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.evening": {
+          "type": "string",
+          "title": "Colour: Evening",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.night": {
+          "type": "string",
+          "title": "Icon: Night",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.night": {
+          "type": "string",
+          "title": "Colour: Night",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.rediscover": {
+          "type": "string",
+          "title": "Icon: Rediscover",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.rediscover": {
+          "type": "string",
+          "title": "Colour: Rediscover",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.newmusic": {
+          "type": "string",
+          "title": "Icon: New Music",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.newmusic": {
+          "type": "string",
+          "title": "Colour: New Music",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.loved": {
+          "type": "string",
+          "title": "Icon: Loved",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.loved": {
+          "type": "string",
+          "title": "Colour: Loved",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.onrepeat": {
+          "type": "string",
+          "title": "Icon: On Repeat",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.onrepeat": {
+          "type": "string",
+          "title": "Colour: On Repeat",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.essentials": {
+          "type": "string",
+          "title": "Icon: Essentials",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.essentials": {
+          "type": "string",
+          "title": "Colour: Essentials",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.discovery": {
+          "type": "string",
+          "title": "Icon: Discovery",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.discovery": {
+          "type": "string",
+          "title": "Colour: Discovery",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.genreradio": {
+          "type": "string",
+          "title": "Icon: Genre Radio",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.genreradio": {
+          "type": "string",
+          "title": "Colour: Genre Radio",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.artistradio": {
+          "type": "string",
+          "title": "Icon: Artist Radio",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.artistradio": {
+          "type": "string",
+          "title": "Colour: Artist Radio",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.dailymix": {
+          "type": "string",
+          "title": "Icon: Daily Mix",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.dailymix": {
+          "type": "string",
+          "title": "Colour: Daily Mix",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.decade": {
+          "type": "string",
+          "title": "Icon: Decade",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.decade": {
+          "type": "string",
+          "title": "Colour: Decade",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
+        },
+        "icon.wrapped": {
+          "type": "string",
+          "title": "Icon: Wrapped",
+          "enum": [
+            "",
+            "sunrise",
+            "sun",
+            "sunset",
+            "moon",
+            "sparkles",
+            "compass",
+            "heart",
+            "star",
+            "repeat",
+            "radio",
+            "shuffle",
+            "clock",
+            "gift",
+            "waveform"
+          ],
+          "default": "",
+          "description": "Leave empty for the built-in icon."
+        },
+        "color.wrapped": {
+          "type": "string",
+          "title": "Colour: Wrapped",
+          "default": "",
+          "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         }
       }
     },
@@ -326,6 +772,142 @@
             {
               "type": "Control",
               "scope": "#/properties/wrappedSharing"
+            }
+          ]
+        },
+        {
+          "type": "Group",
+          "label": "How NaviBeat draws them",
+          "elements": [
+            {
+              "type": "Control",
+              "scope": "#/properties/mixStyle"
+            }
+          ]
+        },
+        {
+          "type": "Group",
+          "label": "Button icons and colours (only used when the style above is Button)",
+          "elements": [
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.morning"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.morning"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.afternoon"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.afternoon"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.evening"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.evening"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.night"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.night"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.rediscover"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.rediscover"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.newmusic"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.newmusic"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.loved"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.loved"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.onrepeat"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.onrepeat"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.essentials"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.essentials"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.discovery"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.discovery"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.genreradio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.genreradio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.artistradio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.artistradio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.dailymix"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.dailymix"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.decade"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.decade"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/icon.wrapped"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/color.wrapped"
             }
           ]
         }

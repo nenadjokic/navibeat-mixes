@@ -88,6 +88,13 @@ nbui1:btn:sunrise:F2A65A:Morning Mix
 | `hex` | **exactly six hex digits, no `#`**. Anything else rejects the WHOLE line and the client uses its own default for that mix. Strict on purpose: a half-read colour renders as an arbitrary shade with nothing to tell the user it was wrong. |
 | `label` | everything after the fourth colon, so it **may contain colons** ("Rock: the loud half"). May be empty, in which case the client uses the playlist's own name. Must be the last field. |
 
+**The plugin writes the button line ONLY when the style is `button`.** That is not an optimisation,
+it is what keeps the rollout safe: a NaviBeat old enough not to know the `nbui1` namespace renders any
+line it does not recognise as part of the description, so writing a button line on a server that is
+not using buttons would show `nbui1:btn:sunrise:F2A65A:Morning` to those users for no benefit. A
+server that opts in accepts that trade knowingly; a server that never touches the setting must not
+pay it.
+
 Writing the button line is optional per playlist. A mix with no line still renders as a button when
 the style is `button`; the client picks an icon from the mix kind (and, for time-of-day mixes, from
 the slot, so morning and night do not get the same sun).
