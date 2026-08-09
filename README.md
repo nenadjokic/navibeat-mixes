@@ -291,8 +291,8 @@ one thing repeated rather than six different mixes.
 
 **`mosaic`** steps aside entirely and lets your server's own four-square album
 grid through, the same artwork every other client draws. A playlist your server
-has not built a mosaic for yet falls back to the generated cover, which is what
-the first, third and fourth tiles below are doing.
+has not built a mosaic for yet falls back to the generated cover until it has,
+so the first minute after switching can look mixed.
 
 ![The mosaic style](docs/img/style-mosaic.png)
 
