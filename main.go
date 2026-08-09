@@ -252,6 +252,12 @@ func generateForUser(cfg config.Config, username string) error {
 		}
 		writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
 	}
+	// #F531: publish the style in the same pass that wrote the mixes, so a
+	// setting change lands everywhere at once instead of the tiles moving now
+	// and the style following on the next five-minute poll.
+	if target := controlPlaylistFor(client, cfg); target != nil {
+		publishStyle(client, cfg, target)
+	}
 	return nil
 }
 
@@ -266,6 +272,53 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 	}
 
 	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
+}
+
+
+// publishStyle writes the presentation style onto the control playlist, and is
+// deliberately callable from BOTH the daily generation and the five-minute
+// control poll.
+//
+// Found while verifying 0.7.0 on a live server: publishing only from the poll
+// means a user who changes the setting sees the mixes regenerate immediately
+// but the STYLE arrive up to five minutes later, which reads as "it did not
+// work". Writing it from the generation run too closes that window, and the
+// write is idempotent so the poll doing it again costs nothing.
+//
+// Only writes when it actually differs: the poll runs every five minutes, and
+// an unconditional SetComment there would be a database write per user forever.
+func publishStyle(client *library.Client, cfg config.Config, target *library.Playlist) {
+	if current, ok := protocol.ParseStyle(target.Comment); ok && string(current) == cfg.MixStyle {
+		return
+	}
+	updated := protocol.AppendLine(target.Comment, protocol.FormatStyle(protocol.Style(cfg.MixStyle)))
+	if err := client.SetComment(target.ID, updated); err != nil {
+		logf("publishing the mix style: %v", err)
+		return
+	}
+	target.Comment = updated
+}
+
+// controlPlaylistFor finds this user's control playlist: by the configured name
+// first, then by the machine line, because the client creates the mailbox and
+// cannot know the server's configured prefix.
+func controlPlaylistFor(client *library.Client, cfg config.Config) *library.Playlist {
+	playlists, err := client.Playlists()
+	if err != nil {
+		return nil
+	}
+	name := cfg.Prefix + controlName
+	for i := range playlists {
+		if playlists[i].Name == name {
+			return &playlists[i]
+		}
+	}
+	for i := range playlists {
+		if meta, ok := protocol.Parse(playlists[i].Comment); ok && meta.Kind == "control" {
+			return &playlists[i]
+		}
+	}
+	return nil
 }
 
 // writeNamed does the actual create-or-update for one playlist.
@@ -318,7 +371,18 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 		icon, colour := cfg.ButtonFor(buttonKey)
 		// The label drops the prefix the playlist name carries: a button is too
 		// narrow to spend on an emoji that only exists to group a list.
+		//
+		// SlotNames only holds the five slots that have a configurable name
+		// (morning, afternoon, evening, night, rediscover), so for the other
+		// twenty mixes it is empty. Falling back to the playlist name with the
+		// prefix stripped is what makes those buttons read "New Music" instead
+		// of the emoji-prefixed name a client would otherwise use. Found while
+		// verifying 0.7.0 on a real server: every mix except those five came
+		// out with an empty label.
 		label := cfg.SlotNames[string(sel.Slot)]
+		if label == "" {
+			label = strings.TrimSpace(strings.TrimPrefix(name, cfg.Prefix))
+		}
 		comment = protocol.AppendLine(comment, protocol.FormatButton(protocol.Button{
 			Glyph: icon, Color: colour, Label: label,
 		}))
@@ -509,12 +573,7 @@ func pollControl() error {
 		// Written only when it actually differs, because this poll runs every
 		// five minutes and a needless SetComment on each one would be a write
 		// to every user's database forever.
-		if current, ok := protocol.ParseStyle(target.Comment); !ok || string(current) != cfg.MixStyle {
-			if err := client.SetComment(target.ID,
-				protocol.AppendLine(target.Comment, protocol.FormatStyle(protocol.Style(cfg.MixStyle)))); err != nil {
-				logf("publishing the mix style: %v", err)
-			}
-		}
+		publishStyle(client, cfg, target)
 
 		cmd, ok := protocol.ParseCommand(target.Comment)
 		if !ok {
