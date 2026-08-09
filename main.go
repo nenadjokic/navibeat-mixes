@@ -120,10 +120,24 @@ func generateAll() error {
 		users = admins
 	}
 
+	skipped := 0
 	for _, u := range users {
+		// The whole point of the setting is HERE, before the work rather than
+		// after it: a skipped user costs about 300 Subsonic calls less, which
+		// on a five account server is most of the run.
+		if !cfg.BuildsFor(u.UserName) {
+			skipped++
+			continue
+		}
 		if err := generateForUser(cfg, u.UserName); err != nil {
 			logf("user %s: %v", u.UserName, err)
 		}
+	}
+	if skipped > 0 {
+		// Said out loud once per run. A setting that silently stops the plugin
+		// from doing anything is the setting people file bugs about, and a
+		// typo in the list is exactly how that happens.
+		logf("skipped %d user(s): not in the configured account list", skipped)
 	}
 	return nil
 }
@@ -430,6 +444,14 @@ func (p *plugin) NowPlaying(scrobbler.NowPlayingRequest) error { return nil }
 
 // Scrobble is the only event that carries a completed play, so it is the only
 // one the histogram is built from.
+//
+// DELIBERATELY NOT FILTERED BY `onlyForUsers`, and this is a choice rather than
+// an oversight. Collecting costs one small key-value read and write per play,
+// while GENERATING costs about 300 Subsonic calls per user per run, so the
+// saving is all on the other side. Keeping the histogram for everyone means an
+// account added to the list later starts with real evidence instead of serving
+// popularity for weeks while it warms up. The setting decides who gets
+// playlists, not who is worth remembering.
 func (p *plugin) Scrobble(req scrobbler.ScrobbleRequest) error {
 	state := loadState(req.Username)
 	at := time.Unix(req.Timestamp, 0)
@@ -525,6 +547,13 @@ func pollControl() error {
 	}
 
 	for _, u := range users {
+		// An account the plugin does not build for has no mixes, and both
+		// commands a client can send (reroll one, refresh all) act on mixes.
+		// So there is nothing here to act on, and skipping saves a
+		// getPlaylists call per user on every poll.
+		if !cfg.BuildsFor(u.UserName) {
+			continue
+		}
 		client := library.New(host.SubsonicAPICall, u.UserName)
 		name := cfg.Prefix + controlName
 

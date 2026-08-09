@@ -45,6 +45,22 @@ type Config struct {
 	GenreNoiseThreshold float64
 	// EnabledMixes lists the mix keys to generate. Empty means all of them.
 	EnabledMixes []string
+	// OnlyForUsers restricts which accounts get mixes at all. EMPTY MEANS
+	// EVERYONE, which is what every existing install already does, so this
+	// cannot change behaviour for anybody who does not fill it in.
+	//
+	// joshp23 (issue #3) on a multi-user server: mixes are built per user by
+	// design, and an admin sees every playlist of every user, so a family
+	// server ends up with a playlist list nobody can read. The clutter is the
+	// visible half. The other half is cost: a run does one getStarred2, two
+	// getAlbumList2 and 200 individual getAlbum calls PER USER, plus four or
+	// five calls for each of the twenty or so playlists it writes. That is
+	// about 300 Subsonic calls per user per run, most of them for people who
+	// have never opened a mix.
+	//
+	// And the part that is not ours to spend: an account that never asked for
+	// this gets twenty playlists dropped into their own library.
+	OnlyForUsers []string
 	// WrappedSharing opts in to sending an aggregate recap for a shareable
 	// link. Off unless the user turns it on, and it is the ONLY thing in this
 	// plugin that can send anything anywhere.
@@ -227,6 +243,9 @@ func Load(get Getter) Config {
 	if v := strings.TrimSpace(get("genreDenylist")); v != "" {
 		c.GenreDenylist = splitList(v)
 	}
+	if v := strings.TrimSpace(get("onlyForUsers")); v != "" {
+		c.OnlyForUsers = splitList(v)
+	}
 	if v := strings.TrimSpace(get("genreNoiseThreshold")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
 			c.GenreNoiseThreshold = f
@@ -330,6 +349,28 @@ func positiveInt(s string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// BuildsFor reports whether this account should get mixes at all.
+//
+// An empty OnlyForUsers means everyone, so an install that never opens this
+// field behaves exactly as it did before the field existed.
+//
+// The comparison is case insensitive on purpose. An admin filling in a list of
+// their own users types names from memory, and "Josh" instead of "josh" would
+// otherwise produce a server where the plugin silently does nothing at all,
+// with no error to read anywhere. Navidrome usernames are unique regardless, so
+// folding case cannot match the wrong person.
+func (c Config) BuildsFor(username string) bool {
+	if len(c.OnlyForUsers) == 0 {
+		return true
+	}
+	for _, allowed := range c.OnlyForUsers {
+		if strings.EqualFold(strings.TrimSpace(allowed), strings.TrimSpace(username)) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitList(s string) []string {

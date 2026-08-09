@@ -139,7 +139,7 @@ files, no restart. Five groups:
 
 | Group | What you can change |
 |---|---|
-| Playlists | The name prefix and how many tracks each mix holds |
+| Playlists | The name prefix, which accounts get mixes, and how many tracks each mix holds |
 | Which mixes to build | A switch per mix, so you can turn off any you do not want |
 | Names | Rename any mix, so they can speak your language |
 | Tuning | Rediscover age, how soon mixes become time-aware, genre filtering |
@@ -154,6 +154,28 @@ nothing you starred has gone six months untouched. Lower the Rediscover age to
 
 **A mix needs at least 10 tracks to be worth making**, so an account with very
 little listening history gets no playlists rather than a four track one.
+
+### On a server with more than one account
+
+**Mixes are per person.** Everyone who plays music gets their own set, built
+from their own listening, and each set is private to its owner.
+
+That is the right default for a server where everyone wants them, and the wrong
+one for a server where one person does. Twenty playlists per account adds up,
+and an account that never asked for this still gets them. So **"Build mixes only
+for these accounts"** takes a comma separated list of usernames. Leave it empty
+and everyone gets mixes, exactly as before. Fill it in and the accounts you
+leave out get nothing, and cost nothing: a skipped account also skips the
+roughly 300 Subsonic calls a run spends on it.
+
+Play history is still collected for everyone, because it is cheap and it means
+an account you add to the list later starts with real evidence instead of
+warming up for weeks.
+
+**One thing this cannot change:** Navidrome shows an admin every playlist on the
+server, including other people's private ones. That is Navidrome's own rule, not
+this plugin's, so an admin account will always see more playlists than a regular
+one. Narrowing the list above is what shortens it.
 
 ### Why the genre threshold exists
 

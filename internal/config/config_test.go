@@ -85,3 +85,65 @@ func TestMaxPerArtistDefaultsToThreeAndIsConfigurable(t *testing.T) {
 		t.Fatalf("setting ignored, got %d", c.MaxPerArtist)
 	}
 }
+
+// The setting joshp23's issue #3 produced: which accounts get mixes at all.
+//
+// The first case is the one that matters most, because it is every install that
+// already exists.
+func TestBuildsForEmptyMeansEveryone(t *testing.T) {
+	c := Defaults()
+	for _, name := range []string{"nenad", "josh", "someone-else"} {
+		if !c.BuildsFor(name) {
+			t.Fatalf("an unset list must build for %q", name)
+		}
+	}
+}
+
+func TestBuildsForOnlyTheListedAccounts(t *testing.T) {
+	c := Load(func(key string) string {
+		if key == "onlyForUsers" {
+			return "josh, nenad"
+		}
+		return ""
+	})
+	if !c.BuildsFor("josh") || !c.BuildsFor("nenad") {
+		t.Fatal("a listed account was skipped")
+	}
+	if c.BuildsFor("guest") {
+		t.Fatal("an account outside the list was built for")
+	}
+}
+
+// A typo in case would otherwise produce a server where the plugin silently
+// does nothing, with nothing to read anywhere that says why.
+func TestBuildsForIgnoresCaseAndSpacing(t *testing.T) {
+	c := Load(func(key string) string {
+		if key == "onlyForUsers" {
+			return "  Josh ,, NENAD  "
+		}
+		return ""
+	})
+	if !c.BuildsFor("josh") {
+		t.Fatal("Josh should match josh")
+	}
+	if !c.BuildsFor("nenad") {
+		t.Fatal("NENAD should match nenad")
+	}
+	if len(c.OnlyForUsers) != 2 {
+		t.Fatalf("empty entries should be dropped, got %v", c.OnlyForUsers)
+	}
+}
+
+// Whitespace only is not a list, it is an empty field with a stray space in it,
+// and reading it as a list would stop the plugin for everybody.
+func TestBuildsForTreatsBlankAsUnset(t *testing.T) {
+	c := Load(func(key string) string {
+		if key == "onlyForUsers" {
+			return "   "
+		}
+		return ""
+	})
+	if !c.BuildsFor("anyone") {
+		t.Fatal("a blank field must mean everyone, not nobody")
+	}
+}

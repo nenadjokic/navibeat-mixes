@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -34,6 +34,12 @@
           "title": "Playlist name prefix",
           "default": "🟠 ",
           "description": "Goes in front of every playlist name, so the mixes group together in your list."
+        },
+        "onlyForUsers": {
+          "type": "string",
+          "title": "Build mixes only for these accounts",
+          "default": "",
+          "description": "Comma separated usernames. Leave empty and every account gets mixes, which is what happens today. Fill it in on a shared server and the accounts you leave out get no playlists and cost no work at all. Names are matched ignoring upper and lower case."
         },
         "mixSize": {
           "type": "integer",
@@ -644,6 +650,10 @@
             {
               "type": "Control",
               "scope": "#/properties/prefix"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/onlyForUsers"
             },
             {
               "type": "Control",
