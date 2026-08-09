@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nenadjokic/navibeat-mixes/internal/mixes"
+	"github.com/nenadjokic/navibeat-mixes/internal/protocol"
 )
 
 // Caller performs a Subsonic request and returns the raw JSON body. Injected
@@ -30,6 +31,13 @@ type Client struct {
 func New(call Caller, user string) *Client {
 	return &Client{call: call, user: user}
 }
+
+// User is the account this client acts as.
+//
+// Exposed because callers outside this package have to filter `getPlaylists`
+// by owner, and that filtering is not optional: see the comment on
+// EnsurePlaylist for what the server actually returns.
+func (c *Client) User() string { return c.user }
 
 type song struct {
 	ID        string `json:"id"`
@@ -226,10 +234,69 @@ func (c *Client) EnsurePlaylist(name string) (string, error) {
 	}); err != nil {
 		// Not fatal: a mix that is visible to others still works, it is just
 		// untidy, and failing here would cost the user the whole playlist.
-		_ = err
+		//
+		// ⛔ BUT IT IS NO LONGER SILENT. This error was discarded outright, and
+		// that discard is the reason one question from a multi-user server
+		// could not be answered from a log: if a user reports seeing other
+		// people's mixes, this call failing is the first suspect and there was
+		// nothing written down to confirm or clear it.
+		if Logf != nil {
+			Logf("could not make %s private: %v", name, err)
+		}
 	}
 	return id, nil
 }
+
+// FindControl picks THIS user's control mailbox out of what the server
+// returned, and never anybody else's.
+//
+// ⛔ THE OWNER CHECK IS THE POINT OF THIS FUNCTION. `getPlaylists` returns every
+// playlist the caller can SEE, and what that means depends on the account.
+// Navidrome's own filter, read from source rather than guessed
+// (persistence/playlist_repository.go, userFilter):
+//
+//	if user.IsAdmin { return And{} }          // no filter at all
+//	return Or{ Eq{"public": true}, Eq{"owner_id": user.ID} }
+//
+// So for an ADMIN the list holds every playlist of every user on the server,
+// private ones included. Matching the mailbox by name alone therefore hands an
+// admin the FIRST user's mailbox, and the machine-line fallback was worse: it
+// matched the first control playlist anywhere on the server, which on any
+// multi-user install is somebody else's.
+//
+// That is not a cosmetic mix-up. The caller reads a nonce out of this playlist
+// and EXECUTES the command it carries, so without this check an admin could run
+// another user's queued command and then write the reply back over that user's
+// mailbox.
+//
+// EnsurePlaylist has carried the same check since a multi-user server exposed
+// this shape for the mixes themselves. These two loops were simply missed.
+func FindControl(playlists []Playlist, name, owner string) *Playlist {
+	for i := range playlists {
+		if playlists[i].Name == name && playlists[i].Owner == owner {
+			return &playlists[i]
+		}
+	}
+	// The client creates the mailbox (it has no way to know this server's
+	// configured prefix), so a rename or a prefix change must not orphan it:
+	// fall back to the machine line, which is the part of the contract neither
+	// side can get wrong. Still only among this user's own playlists.
+	for i := range playlists {
+		if playlists[i].Owner != owner {
+			continue
+		}
+		if meta, ok := protocol.Parse(playlists[i].Comment); ok && meta.Kind == "control" {
+			return &playlists[i]
+		}
+	}
+	return nil
+}
+
+// Logf, when set, receives warnings this package chooses not to fail on.
+//
+// A function variable rather than an import because this package is kept free
+// of the plugin SDK so its tests run as ordinary Go.
+var Logf func(format string, args ...any)
 
 // ReplaceTracks sets a playlist's contents to exactly the given ids.
 //

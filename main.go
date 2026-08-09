@@ -67,6 +67,9 @@ func init() {
 	// anything in the manifest. Registering here is what makes the host
 	// deliver play events.
 	scrobbler.Register(&plugin{})
+	// The library package keeps itself free of the plugin SDK so its tests run
+	// as ordinary Go, so it reaches the host log through this instead.
+	library.Logf = logf
 }
 
 type plugin struct{}
@@ -307,18 +310,7 @@ func controlPlaylistFor(client *library.Client, cfg config.Config) *library.Play
 	if err != nil {
 		return nil
 	}
-	name := cfg.Prefix + controlName
-	for i := range playlists {
-		if playlists[i].Name == name {
-			return &playlists[i]
-		}
-	}
-	for i := range playlists {
-		if meta, ok := protocol.Parse(playlists[i].Comment); ok && meta.Kind == "control" {
-			return &playlists[i]
-		}
-	}
-	return nil
+	return library.FindControl(playlists, cfg.Prefix+controlName, client.User())
 }
 
 // writeNamed does the actual create-or-update for one playlist.
@@ -540,25 +532,9 @@ func pollControl() error {
 		if err != nil {
 			continue
 		}
-		var target *library.Playlist
-		for i := range playlists {
-			if playlists[i].Name == name {
-				target = &playlists[i]
-				break
-			}
-		}
-		if target == nil {
-			// The client creates the mailbox (it has no way to know this
-			// server's configured prefix), so a rename or a prefix change
-			// must not orphan it: fall back to the machine line, which is
-			// the part of the contract neither side can get wrong.
-			for i := range playlists {
-				if meta, ok := protocol.Parse(playlists[i].Comment); ok && meta.Kind == "control" {
-					target = &playlists[i]
-					break
-				}
-			}
-		}
+		// Owner-filtered, and that matters most HERE: this loop reads a nonce
+		// and executes the command it finds. See library.FindControl.
+		target := library.FindControl(playlists, name, u.UserName)
 		if target == nil {
 			// The mailbox is only created once a client asks for it, so an
 			// unused server never grows a playlist nobody wanted.
