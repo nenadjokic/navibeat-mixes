@@ -1,8 +1,8 @@
 # `nbui1`: how the plugin tells every NaviBeat client to draw its mixes
 
-**Status: the CLIENT half is built and shipping. The PLUGIN half is not written yet.**
-This document is the contract to build against, and it is authoritative because the client's
-parser and its tests were written from it.
+**Status: BOTH halves are built.** The client reads these lines as of its next release; this plugin
+writes them as of **0.7.0**. The document stays as the contract, because the Kotlin client family
+still has to implement its side and both parsers were written from here.
 
 Apple-side implementation: `NaviBeatCore/Sources/NaviBeatModels/MixPresentation.swift`,
 tests in `NaviBeatCore/Tests/NaviBeatModelsTests/MixPresentationTests.swift`.
@@ -145,12 +145,19 @@ no coordination window to hit.
 
 ---
 
-## What the plugin UI needs to offer
+## What the plugin settings offer, as of 0.7.0
 
-From Nenad's spec:
+Two new groups in Navidrome's plugin settings:
 
-- a choice: **NaviBeat thumbnails** or **buttons**;
-- when buttons are chosen, a per-playlist section to set the **icon**, the **colour** of that icon,
-  and the **name** shown on the button.
+- **How NaviBeat draws them**: `mixStyle`, one of `cover` (NaviBeat's generated artwork, the
+  default), `button`, or `mosaic` (the server's own album grid).
+- **Button icons and colours**: `icon.<family>` and `color.<family>` for the fifteen mix families.
+  Every one is optional; empty means the built-in default, which is why a server nobody configures
+  still gets a varied shelf.
 
-Nothing else, and nothing in the NaviBeat app itself.
+The button LABEL is not a new field: it reuses the existing `name.<slot>` setting, so the button says
+what the user already named that mix, without the playlist-name prefix a button is too narrow to
+spend on.
+
+Nothing was added to the NaviBeat app. Its old "NaviBeat covers for generated mixes" toggle was
+removed on all five platforms in the same session, which is the entire point of this feature.
