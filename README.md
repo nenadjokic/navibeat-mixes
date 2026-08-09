@@ -271,6 +271,41 @@ Every other client shows these playlists as rows with two extra lines of text
 under them, which is harmless and was designed to be. If you write a client and
 want the same, the format is documented above and you are welcome to it.
 
+### You choose how they are drawn, here, not in the app
+
+**Settings > Plugins > NaviBeat Mixes > How NaviBeat draws them.** The choice
+lives here rather than in NaviBeat for a simple reason: a setting inside the app
+for a feature that lives in a plugin is a dead switch for everyone who never
+installed the plugin.
+
+**`cover`** is the default and what every existing install already sees: one
+generated cover per mix, stable from day to day.
+
+![The cover style](docs/img/style-cover.png)
+
+**`button`** trades the artwork for width. The row becomes compact buttons with
+an icon per mix, which is worth it when a shelf of six covers starts reading as
+one thing repeated rather than six different mixes.
+
+![The button style](docs/img/style-button.png)
+
+**`mosaic`** steps aside entirely and lets your server's own four-square album
+grid through, the same artwork every other client draws. A playlist your server
+has not built a mosaic for yet falls back to the generated cover, which is what
+the first, third and fourth tiles below are doing.
+
+![The mosaic style](docs/img/style-mosaic.png)
+
+When the style is `button`, **Button icons and colours** lets you set an icon and
+a colour per mix family. Both are optional: leave them empty and each family gets
+a sensible one, which is what the screenshot above shows.
+
+> **Restart Navidrome after changing plugin settings.** The plugin reads its
+> configuration when Navidrome loads it, so a change made in the settings form
+> does not reach a running plugin. This is Navidrome's plugin lifecycle rather
+> than anything this plugin decides, and it applies to every setting here, not
+> just these.
+
 ## Support
 
 This plugin is free and always will be. If it earns you a few good mornings:
