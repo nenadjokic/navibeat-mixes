@@ -57,6 +57,11 @@ type song struct {
 	Played    string `json:"played"`
 	Starred   string `json:"starred"`
 	Duration  int    `json:"duration"`
+	// Created is when the file entered the library. Every Subsonic Child
+	// carries it and Navidrome always fills it in
+	// (server/subsonic/helpers.go, mediaFileCreatedAt), so New Music can rank
+	// on a real date instead of guessing from the order the pool arrived in.
+	Created string `json:"created"`
 }
 
 // genreNames flattens the OpenSubsonic array. Returns nil when the server did
@@ -135,11 +140,19 @@ func (c *Client) do(endpoint string, params url.Values) (*envelope, error) {
 }
 
 // Candidates gathers the pool the mixes are selected from: everything the user
-// starred, plus the tracks of their most played and most recent albums.
+// starred, plus the tracks of their newest, most played and most recent albums.
 //
 // There is no "give me every song" call in Subsonic that is safe on a large
 // library, so the pool is assembled from the endpoints that are cheap and are
 // already biased towards music the user cares about.
+//
+// ⛔ `newest` IS LOAD BEARING AND ITS ABSENCE WAS A DAY ONE BUG. The pool was
+// built from `frequent` and `recent` alone, and both of those are play-ordered:
+// on a server installed this morning they return NOTHING. So a new user with a
+// fully scanned library of thousands of tracks got an empty pool, one line in
+// the log, and not a single playlist, which is exactly how it was reported.
+// `newest` is the only one of the three that answers on a library nobody has
+// played yet, which also makes it the honest source for New Music.
 func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 	seen := map[string]bool{}
 	var out []mixes.Track
@@ -159,6 +172,7 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 				Year:       s.Year,
 				PlayCount:  s.PlayCount,
 				LastPlayed: parseTime(s.Played),
+				Added:      parseTime(s.Created),
 				Starred:    s.Starred != "",
 			})
 		}
@@ -170,7 +184,13 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 		return nil, err
 	}
 
-	for _, listType := range []string{"frequent", "recent"} {
+	// Album ids are deduplicated ACROSS the three lists, not just inside each
+	// one. The overlap is not marginal: on a server in daily use the same
+	// records are both the most played and the most recently played, so the
+	// old code spent a full getAlbum round trip on each of them twice. Paying
+	// that back is what buys the third list below at roughly the old cost.
+	seenAlbum := map[string]bool{}
+	for _, listType := range []string{"newest", "frequent", "recent"} {
 		env, err := c.do("getAlbumList2", url.Values{
 			"type": {listType}, "size": {strconv.Itoa(albumPages)},
 		})
@@ -178,6 +198,10 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 			return nil, err
 		}
 		for _, al := range env.Response.AlbumList2.Album {
+			if al.ID == "" || seenAlbum[al.ID] {
+				continue
+			}
+			seenAlbum[al.ID] = true
 			detail, err := c.do("getAlbum", url.Values{"id": {al.ID}})
 			if err != nil {
 				// One unreadable album must not abort the whole run.

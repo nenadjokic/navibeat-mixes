@@ -116,21 +116,37 @@ and a test fails the build if any other field ever appears in that payload.
    Enabled = true
    ```
 
-4. Restart Navidrome, then approve the plugin in **Settings, Plugins**. It asks
-   for four permissions:
+4. Restart Navidrome, then switch the plugin **on** in **Settings, Plugins**.
 
-   | Permission | Why |
-   |---|---|
-   | `scheduler` | To refresh your mixes daily |
-   | `subsonicapi` | To read your library and create the playlists |
-   | `users` | Mixes are per user, and every Subsonic call needs a user |
-   | `kvstore` | To remember when you listen to what |
+**There is no permission prompt, and nothing to tick one by one.** Navidrome
+grants a plugin everything its manifest declares at the moment you enable it.
+The permission list on the plugin's page is there so you can read what it will
+be allowed to do before you switch it on: clicking one explains it, it does not
+toggle it. This plugin asks for four:
 
-Your mixes appear within a minute of approving it, and refresh at 04:00 daily.
+| Permission | Why |
+|---|---|
+| `scheduler` | To refresh your mixes daily |
+| `subsonicapi` | To read your library and create the playlists |
+| `users` | Mixes are per user, and every Subsonic call needs a user |
+| `kvstore` | To remember when you listen to what |
+
+Your mixes appear within a minute of enabling it, and refresh at 04:00 daily.
 
 > **If nothing appears after an upgrade:** Navidrome disables a plugin whenever
-> its file changes, because the new version may ask for different permissions.
-> Approve it again in Settings.
+> its file changes, because the new version may declare different permissions.
+> Switch it on again in Settings.
+
+> **On a server you have not listened to yet, use 0.9.0 or newer.** Earlier
+> versions gathered their candidate tracks only from your favourites and your
+> most played and most recently played albums, and on a server installed this
+> morning all three of those are empty, however large the library is. 0.9.0
+> reads the newest albums as well, so a fresh install gets New Music, the genre
+> radios and the decade mixes on day one, and the rest fill in as you listen.
+
+> **To watch a run happen**, set `Plugins.LogLevel = "debug"` in
+> `navidrome.toml` and filter the log for `plugin=navibeat-mixes`. Every run
+> says what it did, including when it found nothing to work with.
 
 ## Configuration
 

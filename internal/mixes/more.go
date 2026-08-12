@@ -41,13 +41,24 @@ func NumberedSlot(base Slot, n int) string {
 // BuildNewMusic is the newest additions to the library. It needs no history at
 // all, which makes it one of the few mixes that is genuinely good on install
 // day, so it is worth having even on a server with no listening data.
+//
+// IT RANKS ON THE DATE THE FILE WAS ADDED, which every Subsonic server sends on
+// every song. The old code ranked on position in the candidate pool and said in
+// a comment that the pool arrived "newest-first from the newest album list".
+// It did not: the pool was starred tracks first, then most played, then most
+// recently played, and no newest list was ever fetched. So the mix led with
+// whatever the user had starred and called it new.
+//
+// Position is still the tie-break, for a server that sends no date at all.
 func BuildNewMusic(tracks []Track, size, maxPerArtist int) Selection {
-	scored := make([]scoredTrack, 0, len(tracks))
+	pos := make(map[string]int, len(tracks))
 	for i, t := range tracks {
-		// Candidates arrive newest-first from the newest album list, so
-		// position is the recency signal. Using a date here would need one
-		// that the API does not expose per track.
-		score := len(tracks) - i
+		pos[t.ID] = i
+	}
+	ranked := make([]Track, len(tracks))
+	copy(ranked, tracks)
+	sort.Slice(ranked, func(i, j int) bool {
+		a, b := ranked[i], ranked[j]
 		// Sly777 (issue #1): "on new music playlist, there were many songs I
 		// listened before." New here has always meant new to the LIBRARY, and
 		// on a library you have been listening to for years that is not what
@@ -55,19 +66,23 @@ func BuildNewMusic(tracks []Track, size, maxPerArtist int) Selection {
 		// everything unheard rather than dropped, because a small or
 		// thoroughly-played library would otherwise get an empty mix, which is
 		// the failure the Rediscover builder above already learned to avoid.
-		if t.PlayCount > 0 {
-			score -= len(tracks)
+		if (a.PlayCount > 0) != (b.PlayCount > 0) {
+			return b.PlayCount > 0
 		}
-		scored = append(scored, scoredTrack{track: t, score: score})
-	}
-	// Sorting is what makes the score above mean anything. Recency order is
-	// preserved inside each group, because the penalty is a constant.
-	sort.Slice(scored, func(i, j int) bool {
-		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
+		// A missing date sorts behind every known one rather than ahead of
+		// them: the zero time is "the server did not say", not 1970.
+		if a.Added.IsZero() != b.Added.IsZero() {
+			return b.Added.IsZero()
 		}
-		return scored[i].track.ID < scored[j].track.ID
+		if !a.Added.Equal(b.Added) {
+			return a.Added.After(b.Added)
+		}
+		return pos[a.ID] < pos[b.ID]
 	})
+	scored := make([]scoredTrack, 0, len(ranked))
+	for i, t := range ranked {
+		scored = append(scored, scoredTrack{track: t, score: len(ranked) - i})
+	}
 	return Selection{
 		Slot:     NewMusic,
 		Mode:     ModeFallback,
@@ -107,6 +122,7 @@ func BuildOnRepeat(tracks []Track, now time.Time, window time.Duration, size, ma
 		}
 		scored = append(scored, scoredTrack{track: t, score: t.PlayCount})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     OnRepeat,
 		Mode:     ModeFallback,
@@ -128,6 +144,7 @@ func BuildEssentials(tracks []Track, size, maxPerArtist int) Selection {
 		}
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     Essentials,
 		Mode:     ModeFallback,
@@ -154,6 +171,7 @@ func BuildDiscovery(tracks []Track, now time.Time, minGap time.Duration, size, m
 		days := int(now.Sub(t.LastPlayed).Hours() / 24)
 		scored = append(scored, scoredTrack{track: t, score: days/7 + (4 - t.PlayCount)})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     Discovery,
 		Mode:     ModeFallback,
@@ -242,6 +260,7 @@ func BuildForGenre(tracks []Track, genre string, size, maxPerArtist int) Selecti
 		}
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     GenreRadio,
 		Mode:     ModeFallback,
@@ -264,6 +283,7 @@ func BuildForArtist(tracks []Track, artist string, size int) Selection {
 		}
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
+	sortScored(scored)
 	// No per-artist cap here: the whole point is one artist.
 	return Selection{
 		Slot:     ArtistRadio,
@@ -315,6 +335,7 @@ func BuildForDecade(tracks []Track, decade, size, maxPerArtist int) Selection {
 		}
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     DecadeMix,
 		Mode:     ModeFallback,
@@ -362,6 +383,7 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		}
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
+	sortScored(scored)
 	return Selection{
 		Slot:     DailyMix,
 		Mode:     ModeFallback,

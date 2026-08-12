@@ -74,7 +74,11 @@ type Track struct {
 	PlayCount int
 	// LastPlayed is the zero time when the track has never been played.
 	LastPlayed time.Time
-	Starred    bool
+	// Added is when the file entered the library, from Subsonic's `created`.
+	// Zero when the server did not send one, which callers read as "unknown"
+	// and fall back from rather than treating as very old.
+	Added   time.Time
+	Starred bool
 }
 
 // AllGenres is every genre this track carries, trimmed and without blanks.
@@ -271,12 +275,7 @@ func BuildTimeMix(tracks []Track, opt TimeMixOptions) Selection {
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
 
-	sort.Slice(scored, func(i, j int) bool {
-		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
-		}
-		return scored[i].track.ID < scored[j].track.ID
-	})
+	sortScored(scored)
 
 	return Selection{
 		Slot:     opt.Slot,
@@ -371,6 +370,25 @@ func takeIDs(tracks []Track, size int) []string {
 		ids = append(ids, t.ID)
 	}
 	return ids
+}
+
+// sortScored puts the highest scoring track first.
+//
+// ⛔ THIS IS WHAT MAKES A SCORE MEAN ANYTHING. takeIDsCapped walks the slice in
+// the order it is given and never sorts, and seven builders handed it their
+// candidates in POOL order after carefully computing a score for each one. So
+// "Your Essentials: your most played of all time" was the first thirty played
+// tracks that happened to come back from the album fetches, and a Daily Mix
+// could open on a track that merely shared a genre with its anchor artist.
+func sortScored(scored []scoredTrack) {
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		// Ties break on id so a run is reproducible: the same library and the
+		// same history must produce the same playlist twice.
+		return scored[i].track.ID < scored[j].track.ID
+	})
 }
 
 func takeIDsCapped(scored []scoredTrack, size, maxPerArtist int) []string {
