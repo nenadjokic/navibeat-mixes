@@ -97,6 +97,12 @@ func (p *plugin) OnInit() error {
 	if _, err := host.SchedulerScheduleRecurring(controlCron, "control", controlScheduleID); err != nil {
 		logf("could not register the control poll: %v", err)
 	}
+	// 0.9.4: a load is a fresh start. 0.9.1's ledger made an upgrade on the
+	// same day report "generation complete in 0s" and build nothing, because
+	// the morning's run had already marked every user done. Someone who just
+	// installed or upgraded the plugin is owed a full run now, so the day's
+	// ledger is forgotten before it starts.
+	saveLedger(resume.NewLedger(resume.DayOf(time.Now())))
 	return generateAll()
 }
 
