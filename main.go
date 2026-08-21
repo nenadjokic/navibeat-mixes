@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -589,6 +590,15 @@ func replaceFirstVerb(s string, a any) string {
 		val = strconv.Itoa(v)
 	case error:
 		val = v.Error()
+	case int64:
+		val = strconv.FormatInt(v, 10)
+	case time.Duration:
+		// 0.9.1 logged "budget of ? spent after ?" because this switch did
+		// not know a Duration. The one line that explains a continuation
+		// must carry its numbers.
+		val = v.String()
+	case fmt.Stringer:
+		val = v.String()
 	default:
 		val = "?"
 	}
