@@ -1,6 +1,8 @@
 package mixes
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,7 +74,7 @@ func TestRediscoverExcludesRecentlyPlayed(t *testing.T) {
 func TestRediscoverRespectsSize(t *testing.T) {
 	var tracks []Track
 	for i := 0; i < 50; i++ {
-		tracks = append(tracks, Track{ID: string(rune('a' + i%26)) + string(rune('0' + i/26)), Starred: true, LastPlayed: ago(300 * day)})
+		tracks = append(tracks, Track{ID: string(rune('a'+i%26)) + string(rune('0'+i/26)), Starred: true, LastPlayed: ago(300 * day)})
 	}
 	opt := rediscoverOpts()
 	opt.Size = 7
@@ -210,7 +212,7 @@ func TestRediscoverWidensItsWindowRatherThanProducingNothing(t *testing.T) {
 	var tracks []Track
 	for i := 0; i < 40; i++ {
 		tracks = append(tracks, Track{
-			ID: "t" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
+			ID:      "t" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
 			Starred: true, LastPlayed: ago(time.Duration(60+i) * day),
 		})
 	}
@@ -260,5 +262,51 @@ func TestRediscoverDoesNotRelaxWhenItDoesNotHaveTo(t *testing.T) {
 	}
 	if len(got.TrackIDs) != 20 {
 		t.Errorf("selected %d, want 20", len(got.TrackIDs))
+	}
+}
+
+// 0.9.3: a time-of-day mix changes from day to day within the slot's pool.
+func TestTimeMixRotatesDailyInsideThePoolAndKeepsItsAnchors(t *testing.T) {
+	var tracks []Track
+	aff := SlotAffinity{}
+	for i := 0; i < 120; i++ {
+		id := "t" + strconv.Itoa(i)
+		tracks = append(tracks, Track{ID: id, Artist: "a" + strconv.Itoa(i), PlayCount: 1})
+		aff[id] = map[Slot]int{Morning: 200 - i}
+	}
+	opt := func(day int) TimeMixOptions {
+		return TimeMixOptions{Slot: Morning, Affinity: aff, EventCount: 500,
+			MinEventsForAffinity: 150, Size: 30, MaxPerArtist: 2, Day: day}
+	}
+	d1 := BuildTimeMix(tracks, opt(1)).TrackIDs
+	d2 := BuildTimeMix(tracks, opt(2)).TrackIDs
+	same := BuildTimeMix(tracks, opt(1)).TrackIDs
+	if len(d1) != 30 || len(d2) != 30 {
+		t.Fatalf("sizes %d %d, want 30", len(d1), len(d2))
+	}
+	if strings.Join(d1, ",") != strings.Join(same, ",") {
+		t.Fatal("the same day must give the same mix")
+	}
+	if strings.Join(d1, ",") == strings.Join(d2, ",") {
+		t.Fatal("two days must not give the same mix")
+	}
+	// The five strongest stay, every day, in front.
+	for i := 0; i < Anchors; i++ {
+		want := "t" + strconv.Itoa(i)
+		if d1[i] != want || d2[i] != want {
+			t.Fatalf("anchor %d: day1 %s day2 %s, want %s", i, d1[i], d2[i], want)
+		}
+	}
+	// Nothing from outside the top PoolFactor*Size ever appears.
+	for _, id := range append(append([]string{}, d1...), d2...) {
+		n, _ := strconv.Atoi(id[1:])
+		if n >= 30*PoolFactor {
+			t.Fatalf("%s is outside the pool", id)
+		}
+	}
+	// Day 0 is the old behaviour: the plain top of the ranking.
+	d0 := BuildTimeMix(tracks, opt(0)).TrackIDs
+	if d0[29] != "t29" {
+		t.Fatalf("day 0 must be the plain top 30, got last %s", d0[29])
 	}
 }

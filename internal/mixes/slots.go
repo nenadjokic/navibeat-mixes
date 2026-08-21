@@ -252,7 +252,27 @@ type TimeMixOptions struct {
 	// MaxPerArtist stops one artist from filling the mix. A mix of thirty
 	// tracks by the same artist is an album, not a mix.
 	MaxPerArtist int
+	// Day is the rotation index (DayIndex(now)). Zero means no rotation:
+	// the plain top of the ranking, which is what every test and every
+	// caller before 0.9.3 got.
+	//
+	// 0.9.3 (Nenad, 2026-08-21: "morning miks mi je i dalje isti"): the
+	// nightly run rewrote the mix with the SAME thirty tracks, because the
+	// ranking is deterministic and his listening had not moved. Refreshed
+	// but identical reads as not refreshed. So the mix now draws from a
+	// pool of the top PoolFactor*Size tracks for the slot, keeps the
+	// strongest Anchors every day, and rotates the rest by day, so each
+	// morning is a different slice of what he actually plays in the morning.
+	Day int
 }
+
+// Anchors is how many of the strongest tracks stay in the mix every day.
+const Anchors = 5
+
+// PoolFactor times Size is how deep the rotation reaches into the ranking.
+// Three keeps every pick inside music that genuinely belongs to the slot;
+// deeper would start surfacing tracks that scored on a single play.
+const PoolFactor = 3
 
 // BuildTimeMix selects tracks for one time-of-day slot.
 //
@@ -280,8 +300,35 @@ func BuildTimeMix(tracks []Track, opt TimeMixOptions) Selection {
 	return Selection{
 		Slot:     opt.Slot,
 		Mode:     mode,
-		TrackIDs: takeIDsCapped(scored, opt.Size, opt.MaxPerArtist),
+		TrackIDs: takeIDsCapped(rotateDaily(scored, opt.Size, opt.Day), opt.Size, opt.MaxPerArtist),
 	}
+}
+
+// rotateDaily reorders a ranked list so the day's pick is the anchors, then a
+// day-rotated window of the rest of the pool, then whatever is left of the
+// pool in rank order (so the artist cap can top the mix up without leaving
+// the pool). Day 0, or a ranking too short to rotate, returns it unchanged.
+func rotateDaily(scored []scoredTrack, size, day int) []scoredTrack {
+	if day <= 0 || size <= 0 || len(scored) <= size {
+		return scored
+	}
+	pool := scored[:min(len(scored), size*PoolFactor)]
+	anchors := pool[:min(Anchors, len(pool))]
+	rest := pool[len(anchors):]
+	window := Rotate(rest, day, size-len(anchors))
+	picked := map[string]bool{}
+	for _, s := range window {
+		picked[s.track.ID] = true
+	}
+	out := make([]scoredTrack, 0, len(pool))
+	out = append(out, anchors...)
+	out = append(out, window...)
+	for _, s := range rest {
+		if !picked[s.track.ID] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 type scoredTrack struct {

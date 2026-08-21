@@ -314,6 +314,8 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			Slot: slot, Affinity: affinity, EventCount: state.Events,
 			MinEventsForAffinity: cfg.MinEventsForAffinity,
 			Size:                 cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist,
+			// 0.9.3: a different slice of the slot's pool each day.
+			Day: mixes.DayIndex(now),
 		})
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
 	}
@@ -360,7 +362,6 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 
 	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
 }
-
 
 // publishStyle writes the presentation style onto the control playlist, and is
 // deliberately callable from BOTH the daily generation and the five-minute

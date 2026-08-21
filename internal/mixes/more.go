@@ -21,15 +21,15 @@ import (
 // Extra slots. Numbered ones are stable identities: "Genre Radio 2" is always
 // the second strongest genre, whatever that turns out to be this week.
 const (
-	NewMusic     Slot = "newmusic"
-	LovedSongs   Slot = "loved"
-	OnRepeat     Slot = "onrepeat"
-	Essentials   Slot = "essentials"
-	Discovery    Slot = "discovery"
-	GenreRadio   Slot = "genreradio"
-	ArtistRadio  Slot = "artistradio"
-	DailyMix     Slot = "dailymix"
-	DecadeMix    Slot = "decade"
+	NewMusic    Slot = "newmusic"
+	LovedSongs  Slot = "loved"
+	OnRepeat    Slot = "onrepeat"
+	Essentials  Slot = "essentials"
+	Discovery   Slot = "discovery"
+	GenreRadio  Slot = "genreradio"
+	ArtistRadio Slot = "artistradio"
+	DailyMix    Slot = "dailymix"
+	DecadeMix   Slot = "decade"
 )
 
 // NumberedSlot builds the stable slot key for a numbered mix, for example
@@ -398,6 +398,12 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 // change its contents weekly while keeping a fixed name: the identity is the
 // number in the title, the content is a window into a deeper pool, and the
 // window only moves when the week does.
+// DayIndex is the daily rotation counter: days since the Unix epoch, plus one
+// so that a real day is never the zero that means "do not rotate".
+func DayIndex(now time.Time) int {
+	return int(now.Unix()/(60*60*24)) + 1
+}
+
 func WeekIndex(now time.Time) int {
 	// Days since the Unix epoch, bucketed into weeks.
 	//
