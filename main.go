@@ -32,6 +32,7 @@ import (
 	"github.com/nenadjokic/navibeat-mixes/internal/library"
 	"github.com/nenadjokic/navibeat-mixes/internal/mixes"
 	"github.com/nenadjokic/navibeat-mixes/internal/protocol"
+	"github.com/nenadjokic/navibeat-mixes/internal/resume"
 )
 
 const (
@@ -58,6 +59,12 @@ const (
 	controlScheduleID = "navibeat-mixes-control"
 	controlCron       = "*/5 * * * *"
 	controlName       = "NaviBeat control"
+
+	// A run that does not fit in one host call continues in another one a few
+	// seconds later. See internal/resume for why this exists at all.
+	continueScheduleID = "navibeat-mixes-continue"
+	continueDelaySec   = 5
+	ledgerKey          = "run:ledger"
 )
 
 func init() {
@@ -103,11 +110,24 @@ func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 	return generateAll()
 }
 
-// generateAll rebuilds every enabled mix for every user.
+// generateAll rebuilds every enabled mix for every user, within the host's
+// call budget, and continues in a later call when it cannot finish.
 //
 // Errors are logged and the run continues. One user with an odd library, or
 // one mix that cannot be built, must not stop the others from being written.
+//
+// Found on a live server (2026-08-21): Navidrome kills a scheduler callback
+// after about 30 seconds ("module closed with context deadline exceeded"),
+// and a five-account server with one large library cost more than that, so
+// every night only the first part of the plan was refreshed and the
+// time-of-day mixes, last in the plan, never were. The run now keeps a
+// per-day ledger of what it has written, stops when its time budget is
+// spent, and asks the host to call it again in a few seconds; the next call
+// skips everything already in the ledger.
 func generateAll() error {
+	budget := resume.StartBudget(resume.DefaultLimit, time.Now)
+	day := resume.DayOf(time.Now())
+	ledger := loadLedger(day)
 	cfg := config.Load(func(key string) string { v, _ := pdk.GetConfig(key); return v })
 
 	users, err := host.UsersGetUsers()
@@ -129,8 +149,24 @@ func generateAll() error {
 			skipped++
 			continue
 		}
-		if err := generateForUser(cfg, u.UserName); err != nil {
+		if ledger.UserDone(u.UserName) {
+			continue
+		}
+		finished, err := generateForUser(cfg, u.UserName, ledger, budget)
+		if err != nil {
 			logf("user %s: %v", u.UserName, err)
+		}
+		saveLedger(ledger)
+		if !finished {
+			// Out of time with work left: hand the rest to the next call
+			// rather than be killed mid-write with nothing to say about it.
+			if _, err := host.SchedulerScheduleOneTime(continueDelaySec, "generate", continueScheduleID); err != nil {
+				logf("could not schedule the continuation: %v", err)
+				return nil
+			}
+			logf("budget of %v spent after %v with %s unfinished, continuing in %ds",
+				resume.DefaultLimit, budget.Elapsed().Round(time.Second), u.UserName, continueDelaySec)
+			return nil
 		}
 	}
 	if skipped > 0 {
@@ -139,19 +175,38 @@ func generateAll() error {
 		// typo in the list is exactly how that happens.
 		logf("skipped %d user(s): not in the configured account list", skipped)
 	}
+	logf("generation complete for %s in %v", day, budget.Elapsed().Round(time.Second))
 	return nil
 }
 
-func generateForUser(cfg config.Config, username string) error {
+func loadLedger(day string) *resume.Ledger {
+	data, ok, err := host.KVStoreGet(ledgerKey)
+	if err != nil || !ok {
+		return resume.NewLedger(day)
+	}
+	return resume.Decode(data, day)
+}
+
+func saveLedger(l *resume.Ledger) {
+	if err := host.KVStoreSet(ledgerKey, l.Encode()); err != nil {
+		logf("could not save the run ledger: %v", err)
+	}
+}
+
+// generateForUser writes one user's plan, skipping what the ledger already
+// holds for today and stopping when the budget is spent. Returns whether the
+// user is finished; false means "call again".
+func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, budget *resume.Budget) (bool, error) {
 	client := library.New(host.SubsonicAPICall, username)
 
 	tracks, err := client.Candidates(albumPages)
 	if err != nil {
-		return err
+		return true, err
 	}
 	if len(tracks) == 0 {
 		logf("user %s: no candidate tracks yet, skipping", username)
-		return nil
+		ledger.MarkUserDone(username)
+		return true, nil
 	}
 	tracks = mixes.FilterGenres(tracks, cfg.GenreDenylist, cfg.GenreNoiseThreshold)
 
@@ -262,12 +317,25 @@ func generateForUser(cfg config.Config, username string) error {
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
 	}
 
+	written := 0
 	for _, e := range plan {
+		if ledger.SlotDone(username, e.slot) {
+			continue
+		}
+		if budget.Spent() {
+			if written > 0 || len(ledger.DoneSlots(username)) > 0 {
+				logf("user %s: %d of %d mixes written so far, the rest continue in the next call",
+					username, len(ledger.DoneSlots(username)), len(plan))
+			}
+			return false, nil
+		}
 		human := e.human
 		if human == "" {
 			human = describe(cfg, e.sel)
 		}
 		writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
+		ledger.MarkSlotDone(username, e.slot)
+		written++
 	}
 	// #F531: publish the style in the same pass that wrote the mixes, so a
 	// setting change lands everywhere at once instead of the tiles moving now
@@ -275,7 +343,8 @@ func generateForUser(cfg config.Config, username string) error {
 	if target := controlPlaylistFor(client, cfg); target != nil {
 		publishStyle(client, cfg, target)
 	}
-	return nil
+	ledger.MarkUserDone(username)
+	return true, nil
 }
 
 // writeMix creates or updates one playlist. A mix that selected nothing is
@@ -617,14 +686,32 @@ func pollControl() error {
 func runCommand(cfg config.Config, username string, cmd protocol.Command) error {
 	switch cmd.Kind {
 	case protocol.CmdRefreshAll:
-		return generateForUser(cfg, username)
+		return regenerateUserNow(cfg, username)
 	case protocol.CmdReroll:
 		// Re-rolling one mix still runs the whole user pass. Generation is
 		// cheap next to the round trips it already makes, and a partial pass
 		// would need a second code path that could drift from the first.
-		return generateForUser(cfg, username)
+		return regenerateUserNow(cfg, username)
 	}
 	return nil
+}
+
+// regenerateUserNow is the control playlist's path: the user asked, so today's
+// ledger for them is forgotten and the whole plan is rebuilt, under the same
+// budget as the nightly run and with the same continuation if it runs long.
+func regenerateUserNow(cfg config.Config, username string) error {
+	day := resume.DayOf(time.Now())
+	ledger := loadLedger(day)
+	ledger.ResetUser(username)
+	budget := resume.StartBudget(resume.DefaultLimit, time.Now)
+	finished, err := generateForUser(cfg, username, ledger, budget)
+	saveLedger(ledger)
+	if !finished {
+		if _, serr := host.SchedulerScheduleOneTime(continueDelaySec, "generate", continueScheduleID); serr != nil {
+			logf("could not schedule the continuation: %v", serr)
+		}
+	}
+	return err
 }
 
 func nonceKey(username string) string { return "ctl:" + username + ":lastNonce" }

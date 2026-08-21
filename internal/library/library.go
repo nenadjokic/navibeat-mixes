@@ -24,6 +24,12 @@ type Caller func(uri string) (string, error)
 type Client struct {
 	call Caller
 	user string
+	// playlists is the getPlaylists answer, fetched once per client and kept
+	// for EnsurePlaylist. Before this, every one of the ~30 mixes written for a
+	// user re-fetched the whole list (109 playlists on the server that showed
+	// it), which was a third of the nightly run's Subsonic calls and part of
+	// why the run overran the host's deadline. nil means not fetched yet.
+	playlists []Playlist
 }
 
 // New returns a client that acts as the given user. Every Subsonic call needs
@@ -234,11 +240,14 @@ func (c *Client) Playlists() ([]Playlist, error) {
 // Mixes are per user by design, so two people are supposed to end up with two
 // playlists of the same name. Only the owner may be handed back their own.
 func (c *Client) EnsurePlaylist(name string) (string, error) {
-	existing, err := c.Playlists()
-	if err != nil {
-		return "", err
+	if c.playlists == nil {
+		existing, err := c.Playlists()
+		if err != nil {
+			return "", err
+		}
+		c.playlists = existing
 	}
-	for _, p := range existing {
+	for _, p := range c.playlists {
 		if p.Name == name && p.Owner == c.user {
 			return p.ID, nil
 		}
@@ -253,6 +262,7 @@ func (c *Client) EnsurePlaylist(name string) (string, error) {
 	if id == "" {
 		return "", fmt.Errorf("createPlaylist %q returned no id", name)
 	}
+	c.playlists = append(c.playlists, Playlist{ID: id, Name: name, Owner: c.user})
 	if _, err := c.do("updatePlaylist", url.Values{
 		"playlistId": {id}, "public": {"false"},
 	}); err != nil {
