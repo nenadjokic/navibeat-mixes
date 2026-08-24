@@ -321,14 +321,71 @@ func rotateDaily(scored []scoredTrack, size, day int) []scoredTrack {
 		picked[s.track.ID] = true
 	}
 	out := make([]scoredTrack, 0, len(pool))
-	out = append(out, anchors...)
-	out = append(out, window...)
+	out = append(out, spreadAnchors(anchors, window, day)...)
 	for _, s := range rest {
 		if !picked[s.track.ID] {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+// spreadAnchors puts the day's anchors THROUGH the day's window instead of
+// stacking all of them at the top.
+//
+// 0.9.5 (Nenad, 2026-08-24: "ovaj morning mix je identican od prvog dana").
+// 0.9.3 was already working. Measured on his own server the same day: his
+// morning pool is 165 tracks, and the mix was the five anchors followed by a
+// contiguous window starting at rank 34, so 25 of the 30 tracks really did
+// change overnight. What did not change was the part he looks at. The anchors
+// went out first, in score order, so rows one to five of the playlist were the
+// same five tracks in the same order every single day since the mix was
+// created. A mix that rotates 25 tracks still reads as frozen when its visible
+// head never moves.
+//
+// The anchors keep their job, which is to guarantee that the strongest tracks
+// for the slot are always in the mix. They are simply no longer all parked at
+// the top: one per band, and the whole pattern shifted by the day, so tomorrow
+// opens on a different track.
+func spreadAnchors(anchors, window []scoredTrack, day int) []scoredTrack {
+	n := len(anchors) + len(window)
+	if len(anchors) == 0 || n == 0 {
+		out := make([]scoredTrack, 0, n)
+		out = append(out, anchors...)
+		return append(out, window...)
+	}
+	out := make([]scoredTrack, n)
+	filled := make([]bool, n)
+	step := n / len(anchors)
+	if step < 1 {
+		step = 1
+	}
+	for i, a := range anchors {
+		p := (day + i*step) % n
+		for filled[p] {
+			p = (p + 1) % n
+		}
+		out[p] = a
+		filled[p] = true
+	}
+	w := 0
+	for i := 0; i < n; i++ {
+		if filled[i] || w >= len(window) {
+			continue
+		}
+		out[i] = window[w]
+		w++
+		filled[i] = true
+	}
+	// A slot the window could not fill is compacted away rather than left as
+	// a zero-value track that would reach the playlist as an empty id.
+	packed := out[:0]
+	for i, s := range out {
+		if filled[i] {
+			packed = append(packed, s)
+		}
+	}
+	return packed
 }
 
 type scoredTrack struct {

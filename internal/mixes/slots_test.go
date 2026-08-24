@@ -290,11 +290,18 @@ func TestTimeMixRotatesDailyInsideThePoolAndKeepsItsAnchors(t *testing.T) {
 	if strings.Join(d1, ",") == strings.Join(d2, ",") {
 		t.Fatal("two days must not give the same mix")
 	}
-	// The five strongest stay, every day, in front.
-	for i := 0; i < Anchors; i++ {
-		want := "t" + strconv.Itoa(i)
-		if d1[i] != want || d2[i] != want {
-			t.Fatalf("anchor %d: day1 %s day2 %s, want %s", i, d1[i], d2[i], want)
+	// 0.9.5: the five strongest stay in the mix every day, but NOT pinned to
+	// the top. Presence is the guarantee; position is what rotates.
+	for _, ids := range [][]string{d1, d2} {
+		have := map[string]bool{}
+		for _, id := range ids {
+			have[id] = true
+		}
+		for i := 0; i < Anchors; i++ {
+			want := "t" + strconv.Itoa(i)
+			if !have[want] {
+				t.Fatalf("anchor %s missing from %v", want, ids)
+			}
 		}
 	}
 	// Nothing from outside the top PoolFactor*Size ever appears.
@@ -308,5 +315,87 @@ func TestTimeMixRotatesDailyInsideThePoolAndKeepsItsAnchors(t *testing.T) {
 	d0 := BuildTimeMix(tracks, opt(0)).TrackIDs
 	if d0[29] != "t29" {
 		t.Fatalf("day 0 must be the plain top 30, got last %s", d0[29])
+	}
+}
+
+// 0.9.5 (Nenad, 2026-08-24: "ovaj morning mix je identican od prvog dana").
+// 0.9.3 rotated 25 of the 30 tracks every day and it worked, but it emitted
+// the five anchors first, in score order, so the VISIBLE head of the playlist
+// was the same five tracks every day since the mix was created. Rotating the
+// part nobody scrolls to is not a rotation the user can see.
+func TestTimeMixHeadIsNotFrozenAcrossDays(t *testing.T) {
+	var tracks []Track
+	aff := SlotAffinity{}
+	for i := 0; i < 120; i++ {
+		id := "t" + strconv.Itoa(i)
+		tracks = append(tracks, Track{ID: id, Artist: "a" + strconv.Itoa(i), PlayCount: 1})
+		aff[id] = map[Slot]int{Morning: 200 - i}
+	}
+	opt := func(day int) TimeMixOptions {
+		return TimeMixOptions{Slot: Morning, Affinity: aff, EventCount: 500,
+			MinEventsForAffinity: 150, Size: 30, MaxPerArtist: 2, Day: day}
+	}
+
+	// Seven days in a row: the first row must not be the same track every day.
+	firsts := map[string]int{}
+	heads := map[string]int{}
+	for day := 1; day <= 7; day++ {
+		ids := BuildTimeMix(tracks, opt(day)).TrackIDs
+		if len(ids) != 30 {
+			t.Fatalf("day %d: %d tracks, want 30", day, len(ids))
+		}
+		for _, id := range ids {
+			if id == "" {
+				t.Fatalf("day %d: empty track id in %v", day, ids)
+			}
+		}
+		firsts[ids[0]]++
+		heads[strings.Join(ids[:Anchors], ",")]++
+	}
+	if len(firsts) < 2 {
+		t.Fatalf("the first track was %v on all seven days, the head is frozen", firsts)
+	}
+	if len(heads) < 2 {
+		t.Fatal("the first five rows were identical on all seven days, the head is frozen")
+	}
+
+	// And the anchors are still really in there, every day, which is the whole
+	// reason they exist.
+	for day := 1; day <= 7; day++ {
+		have := map[string]bool{}
+		for _, id := range BuildTimeMix(tracks, opt(day)).TrackIDs {
+			have[id] = true
+		}
+		for i := 0; i < Anchors; i++ {
+			if want := "t" + strconv.Itoa(i); !have[want] {
+				t.Fatalf("day %d: anchor %s dropped", day, want)
+			}
+		}
+	}
+}
+
+// The mix must never contain the same track twice, on any day.
+func TestTimeMixHasNoDuplicatesAfterSpreadingTheAnchors(t *testing.T) {
+	var tracks []Track
+	aff := SlotAffinity{}
+	for i := 0; i < 120; i++ {
+		id := "t" + strconv.Itoa(i)
+		tracks = append(tracks, Track{ID: id, Artist: "a" + strconv.Itoa(i), PlayCount: 1})
+		aff[id] = map[Slot]int{Morning: 200 - i}
+	}
+	for day := 1; day <= 40; day++ {
+		ids := BuildTimeMix(tracks, TimeMixOptions{Slot: Morning, Affinity: aff,
+			EventCount: 500, MinEventsForAffinity: 150, Size: 30, MaxPerArtist: 2,
+			Day: day}).TrackIDs
+		seen := map[string]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				t.Fatalf("day %d: %s appears twice", day, id)
+			}
+			seen[id] = true
+		}
+		if len(ids) != 30 {
+			t.Fatalf("day %d: %d tracks, want 30", day, len(ids))
+		}
 	}
 }
