@@ -183,13 +183,67 @@ func BuildDiscovery(tracks []Track, now time.Time, minGap time.Duration, size, m
 // many files carry the tag. A genre with 3000 untouched tracks is a shelf, not
 // a taste.
 func TopGenres(tracks []Track, n int) []string {
+	return TopGenresOwning(tracks, n, 0, 0)
+}
+
+// TopGenresOwning is TopGenres with a floor on how many tracks the genre must
+// have IN THE CANDIDATE POOL to be eligible at all.
+//
+// The same defect TopArtistsOwning exists for, in the same shape: ranking is by
+// plays, so a genre carried by ONE heavily played track walks into the top 12,
+// gets numbered, produces a one track Genre Radio, and is then dropped for
+// being under minMixSize. The number goes with it and Genre Radio starts at 2.
+// Fixing the artists and leaving this alone would have shipped the reporter
+// the same bug on a different shelf.
+//
+// ⛔ THE FILTER RUNS BEFORE THE TOP n IS TAKEN, for the reason spelled out in
+// TopArtistsOwning: Rotate takes its window at start = (week * size) % len(pool),
+// so a pool that comes back short moves the weekly window for every user on the
+// server, including everyone whose numbering was never broken.
+//
+// ⛔ AND THE COUNT MATCHES HOW BuildForGenre COLLECTS, WHICH IS NOT THE SAME
+// QUESTION AS FOR ARTISTS, FOR TWO SEPARATE REASONS.
+//
+// First, a track has more than one genre. The builder takes a track when
+// HasGenre is true, and HasGenre is EqualFold over AllGenres, so a track tagged
+// "Hip-Hop; Funk" really is a Funk track and a Hip-Hop track at once and must
+// count for both. AllGenres has already trimmed its values and dropped
+// case-duplicates within the track, so one increment per entry, keyed
+// lower-case, is exactly the set of tracks HasGenre returns. Counting the
+// legacy Genre field instead would rank Funk on a funk library at zero, which
+// is issue #1 from Sly777 all over again.
+//
+// Second, and this is where counting TRACKS is still the wrong number:
+// BuildForGenre hands its candidates to takeIDsCapped WITH maxPerArtist, and
+// BuildForArtist does not. So a genre needs ceil(minMixSize / maxPerArtist)
+// DISTINCT ARTISTS however many tracks it has. Measured: a genre with 20 tracks
+// by 2 artists at the default cap of 3 yields SIX tracks, sails through a floor
+// that counts tracks, and Genre Radio still starts at 2. The floor therefore
+// counts CAPACITY, sum(min(tracksByArtist, maxPerArtist)), which is exactly
+// what takeIDsCapped will be able to take, so the floor and the builder answer
+// the same question rather than two similar ones.
+//
+// minOwned of 0 still means everybody passes, whatever the cap, so TopGenres
+// and every existing caller are untouched.
+func TopGenresOwning(tracks []Track, n, minOwned, maxPerArtist int) []string {
 	plays := map[string]int{}
+	// Ranking keeps its original key so TopGenres is untouched. Eligibility is
+	// folded, and is per artist because the cap is per artist.
+	byArtist := map[string]map[string]int{}
 	for _, t := range tracks {
+		// Not trimmed, because takeIDsCapped does not trim either. The floor
+		// has to bucket tracks the same way the cap will.
+		artist := strings.ToLower(t.Artist)
 		// Every genre the track carries, not just the legacy first one. A
 		// library where Funk is almost always a SECOND genre used to rank
 		// Funk near zero and never build it a radio.
 		for _, g := range t.AllGenres() {
 			plays[g] += t.PlayCount + 1 // presence counts a little, plays count more
+			key := strings.ToLower(g)
+			if byArtist[key] == nil {
+				byArtist[key] = map[string]int{}
+			}
+			byArtist[key][artist]++
 		}
 	}
 	type gp struct {
@@ -198,6 +252,9 @@ func TopGenres(tracks []Track, n int) []string {
 	}
 	all := make([]gp, 0, len(plays))
 	for g, c := range plays {
+		if genreCapacity(byArtist[strings.ToLower(g)], maxPerArtist) < minOwned {
+			continue
+		}
 		all = append(all, gp{g, c})
 	}
 	sort.Slice(all, func(i, j int) bool {
@@ -213,15 +270,49 @@ func TopGenres(tracks []Track, n int) []string {
 	return out
 }
 
-// TopArtists ranks artists the same way.
+// TopArtists ranks artists the same way. Every artist with at least one play
+// is eligible, which is what every caller before issue #4 got.
 func TopArtists(tracks []Track, n int) []string {
+	return TopArtistsOwning(tracks, n, 0)
+}
+
+// TopArtistsOwning is TopArtists with a floor on how many tracks an artist must
+// have IN THE CANDIDATE POOL to be eligible at all.
+//
+// Ranking is by plays and only by plays, which is the right answer to "who do
+// you listen to" and the wrong answer to "who can fill a playlist". An artist
+// with one starred track played five hundred times outranks the whole library
+// and then produces a ONE track Artist Radio. One is under minMixSize, so the
+// playlist is never written, and the number it would have carried is missing.
+// SinTan1729 (issue #4) reported exactly that shape: Artist Radio starting at 2.
+//
+// ⛔ THE FILTER RUNS BEFORE THE TOP n IS TAKEN, NEVER AFTER, AND THAT ORDER IS
+// THE WHOLE POINT. Rotate computes its weekly window as
+// start = (week * size) % len(pool). Shortening the pool therefore moves the
+// window for EVERY user on the server, including everyone this bug never
+// touched. Narrowing the eligible set first and then taking n means a user who
+// has n or more eligible artists still gets a pool of exactly n, so their
+// rotation does not move by a single position. Only a user with fewer eligible
+// artists gets a shorter pool, and that user is precisely the one whose
+// numbers are missing today.
+//
+// Eligibility counts case-insensitively because BuildForArtist COLLECTS
+// case-insensitively (strings.EqualFold, above). A case-sensitive count would
+// split a library that spells one artist two ways: six "ABBA" plus six "Abba"
+// is twelve tracks to the builder but two sixes to the counter, and a mix that
+// works today would disappear.
+func TopArtistsOwning(tracks []Track, n, minOwned int) []string {
 	plays := map[string]int{}
+	// Ranking keeps its original key so TopArtists is untouched; only the
+	// eligibility count is folded.
+	owned := map[string]int{}
 	for _, t := range tracks {
 		a := strings.TrimSpace(t.Artist)
 		if a == "" {
 			continue
 		}
 		plays[a] += t.PlayCount
+		owned[strings.ToLower(a)]++
 	}
 	type ap struct {
 		name string
@@ -230,6 +321,9 @@ func TopArtists(tracks []Track, n int) []string {
 	all := make([]ap, 0, len(plays))
 	for a, c := range plays {
 		if c <= 0 {
+			continue
+		}
+		if owned[strings.ToLower(a)] < minOwned {
 			continue
 		}
 		all = append(all, ap{a, c})
@@ -245,6 +339,25 @@ func TopArtists(tracks []Track, n int) []string {
 		out = append(out, all[i].name)
 	}
 	return out
+}
+
+// genreCapacity is how many tracks takeIDsCapped could actually take out of one
+// genre, which is NOT the same as how many tracks the genre has.
+//
+// It mirrors takeIDsCapped exactly, and both quirks are deliberate: a cap of
+// zero or less is no cap at all, and a BLANK artist is never capped, because
+// takeIDsCapped skips its per-artist test when the key is empty. A floor that
+// modelled either differently would disagree with the builder it is gating,
+// which is the whole bug this function exists to close.
+func genreCapacity(byArtist map[string]int, maxPerArtist int) int {
+	total := 0
+	for artist, n := range byArtist {
+		if maxPerArtist > 0 && artist != "" && n > maxPerArtist {
+			n = maxPerArtist
+		}
+		total += n
+	}
+	return total
 }
 
 // BuildForGenre is one genre radio.
@@ -359,7 +472,7 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 	// without wandering off into unrelated music.
 	genres := map[string]bool{}
 	for _, t := range tracks {
-		if !strings.EqualFold(t.Artist, anchor) {
+		if !strings.EqualFold(strings.TrimSpace(t.Artist), anchor) {
 			continue
 		}
 		for _, g := range t.AllGenres() {
@@ -371,7 +484,7 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 	for _, t := range tracks {
 		s := 0
 		switch {
-		case strings.EqualFold(t.Artist, anchor):
+		case strings.EqualFold(strings.TrimSpace(t.Artist), anchor):
 			s = 20 + t.PlayCount
 		case t.sharesAnyGenre(genres):
 			s = t.PlayCount + 1
@@ -384,10 +497,20 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
 	sortScored(scored)
+	// The anchor is exempt from maxPerArtist, every other artist is not. See
+	// takeIDsCappedExcept for why.
+	//
+	// ⛔ TRIMMED AS WELL AS LOWER-CASED, and both halves of that are load
+	// bearing. The exemption has to recognise exactly the tracks the EqualFold
+	// tests above scored as anchor tracks. Measured while fixing this: with the
+	// scoring trimmed but the exemption not, an artist tagged half "Padded" and
+	// half " Padded" scored all twelve tracks as anchor tracks and then had six
+	// of them thrown away by the cap as if they were a guest artist, so the mix
+	// came out at nine and its number went missing anyway.
 	return Selection{
 		Slot:     DailyMix,
 		Mode:     ModeFallback,
-		TrackIDs: takeIDsCapped(scored, size, maxPerArtist),
+		TrackIDs: takeIDsCappedExcept(scored, size, maxPerArtist, strings.ToLower(strings.TrimSpace(anchor))),
 	}
 }
 

@@ -496,14 +496,43 @@ func sortScored(scored []scoredTrack) {
 }
 
 func takeIDsCapped(scored []scoredTrack, size, maxPerArtist int) []string {
+	return takeIDsCappedExcept(scored, size, maxPerArtist, "")
+}
+
+// takeIDsCappedExcept is takeIDsCapped with ONE artist held above the cap.
+//
+// `exempt` is an artist name, already lower-cased AND TRIMMED, that
+// MaxPerArtist does not apply to. Only BuildDailyMix passes one, and it passes
+// its own anchor.
+//
+// ⛔ A MIX WHOSE DESCRIPTION SAYS IT IS BUILT AROUND AN ARTIST CANNOT THEN
+// ADMIT THREE OF THAT ARTIST'S TRACKS. Measured on SinTan1729's report (issue
+// #4): an anchor holding 40 tracks in the candidate pool came out as a 3 track
+// mix, because the default MaxPerArtist is 3 and the anchor's genre found no
+// neighbours to widen with. Three is under minMixSize, so the playlist was
+// never written at all and its number went missing from the user's library,
+// which is how "Daily Mix" came to start at 2.
+//
+// The cap still applies to EVERY OTHER artist in the mix, which is the job it
+// was added for: without it a single guest that happens to share the anchor's
+// genre could crowd out everything else.
+func takeIDsCappedExcept(scored []scoredTrack, size, maxPerArtist int, exempt string) []string {
 	ids := make([]string, 0, size)
 	perArtist := map[string]int{}
 	for _, s := range scored {
 		if size > 0 && len(ids) >= size {
 			break
 		}
-		if maxPerArtist > 0 {
-			key := strings.ToLower(s.track.Artist)
+		// The CAP BUCKET keeps the untrimmed key, so the ten callers that pass
+		// no exemption bucket their artists exactly as they always did.
+		key := strings.ToLower(s.track.Artist)
+		// The EXEMPTION is trimmed, because it has to recognise the anchor the
+		// same way BuildDailyMix scored it, and a tag editor that leaves a
+		// leading space on half an artist's tracks is ordinary. Guarded on a
+		// non-empty exempt so an artist tagged with nothing but spaces cannot
+		// become accidentally exempt for the callers that pass nothing.
+		exempted := exempt != "" && strings.ToLower(strings.TrimSpace(s.track.Artist)) == exempt
+		if maxPerArtist > 0 && !exempted {
 			if key != "" && perArtist[key] >= maxPerArtist {
 				continue
 			}

@@ -281,12 +281,20 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// the same top five forever. The name never moves, only what is inside it.
 	week := mixes.WeekIndex(now)
 
-	for i, g := range mixes.Rotate(mixes.TopGenres(tracks, 12), week, 3) {
+	// Same floor and same reason as the artist pool below: a genre that cannot
+	// fill a mix must not be given a number it will then fail to use.
+	for i, g := range mixes.Rotate(mixes.TopGenresOwning(tracks, 12, minMixSize, cfg.MaxPerArtist), week, 3) {
 		add("genreradio", "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
 			"NaviBeat Mixes: "+g+", one of the genres you play most. A different genre each week.", "genreradio",
 			mixes.BuildForGenre(tracks, g, cfg.MixSize, cfg.MaxPerArtist))
 	}
-	artists := mixes.Rotate(mixes.TopArtists(tracks, 20), week, 5)
+	// The 20 are the artists that can actually FILL an Artist Radio: an artist
+	// with fewer than minMixSize tracks in the pool would be numbered, then
+	// silently skipped by writeNamed, and its number would be missing from the
+	// user's library (issue #4). The floor is applied inside TopArtistsOwning
+	// BEFORE the top 20 is taken, so anybody with 20 eligible artists keeps a
+	// pool of exactly 20 and their weekly rotation does not move.
+	artists := mixes.Rotate(mixes.TopArtistsOwning(tracks, 20, minMixSize), week, 5)
 	for i, a := range artists {
 		add("artistradio", "Artist Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.ArtistRadio, i+1),
 			"NaviBeat Mixes: everything you have by "+a+". A different artist each week.", "artistradio",
@@ -342,9 +350,30 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		if human == "" {
 			human = describe(cfg, e.sel)
 		}
-		writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
-		ledger.MarkSlotDone(username, e.slot)
-		written++
+		// ⛔ "NOTHING WAS WRITTEN" HIDES TWO OPPOSITE MEANINGS, which is why
+		// this asks the outcome two separate questions.
+		//
+		// Is the slot settled for today? A real write is. So is a selection
+		// that came out under minMixSize, because that is a fact about today's
+		// candidate pool and not about the server: the next continuation pass
+		// would rebuild the same plan, reach the same answer, and log the same
+		// line. Recording it is what the code did before this fix and it stays.
+		//
+		// A failed host call is NOT settled. That was the real hole: a
+		// createPlaylist or ReplaceTracks that failed once was marked done and
+		// never retried for the rest of the day. It now stays out of the
+		// ledger, so the next pass tries it again.
+		//
+		// The retry cannot spin. MarkUserDone below runs whatever happens, so
+		// the day still ends, and every slot that succeeds drops out of the
+		// next pass, so successive passes get shorter rather than longer.
+		outcome := writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
+		if outcome != writeFailed {
+			ledger.MarkSlotDone(username, e.slot)
+		}
+		if outcome == writeOK {
+			written++
+		}
 	}
 	// #F531: publish the style in the same pass that wrote the mixes, so a
 	// setting change lands everywhere at once instead of the tiles moving now
@@ -404,15 +433,53 @@ func controlPlaylistFor(client *library.Client, cfg config.Config) *library.Play
 	return library.FindControl(playlists, cfg.Prefix+controlName, client.User())
 }
 
-// writeNamed does the actual create-or-update for one playlist.
-func writeNamed(client *library.Client, cfg config.Config, name string, sel mixes.Selection, human, kind string, now time.Time, username string) {
+// writeOutcome is what one attempt at one playlist did.
+//
+// THREE VALUES AND NOT TWO, because the caller has to answer two different
+// questions and a bool can only answer one: "did a playlist get written" and
+// "is this slot settled for today". A skip for being too small answers no to
+// the first and YES to the second. Modelled as a named type with a switchable
+// set of values rather than a second bool, because a pair of bools at a call
+// site does not say which is which, and this repo already states its small
+// closed sets this way (mixes.Mode, protocol.ResultKind).
+//
+// writeFailed is deliberately the zero value: a result nobody set must never
+// mark a slot done.
+type writeOutcome int
+
+const (
+	// writeFailed: a host call failed. Transient as far as this plugin can
+	// tell, so the slot stays out of the ledger and a later pass retries it.
+	writeFailed writeOutcome = iota
+	// writeTooSmall: the selection was under minMixSize. Deterministic for
+	// today's candidate pool, so it is recorded as done for today and the
+	// log line is written once rather than once per continuation pass.
+	writeTooSmall
+	// writeOK: the playlist was created or updated.
+	writeOK
+)
+
+// writeNamed does the actual create-or-update for one playlist. It reports
+// which of the three outcomes happened, so the caller can keep the run ledger
+// honest instead of recording a write that never happened.
+//
+// ⛔ THE SKIP IS NOT SILENT ANY MORE, AND THAT WAS A REAL REPORT. SinTan1729
+// (issue #4) saw Artist Radio and Daily Mix numbering start at 2 and wrote
+// "I don't see any useful info in the logs", which was exactly right: the twin
+// of this guard in writeMix does log, but writeMix has no callers, so every
+// numbered mix came through here and this branch said nothing at all. One line
+// naming the playlist and its count against the threshold is what turns a
+// missing number into something a person can read off a log.
+func writeNamed(client *library.Client, cfg config.Config, name string, sel mixes.Selection, human, kind string, now time.Time, username string) writeOutcome {
 	if len(sel.TrackIDs) < minMixSize {
-		return
+		logf("user %s: %s has %d tracks, under the %d a mix needs, so it was left alone",
+			username, name, len(sel.TrackIDs), minMixSize)
+		return writeTooSmall
 	}
 	id, err := client.EnsurePlaylist(name)
 	if err != nil {
 		logf("user %s: %v", username, err)
-		return
+		return writeFailed
 	}
 
 	count, err := client.TrackCount(id)
@@ -421,7 +488,7 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 	}
 	if err := client.ReplaceTracks(id, count, sel.TrackIDs); err != nil {
 		logf("user %s: writing tracks: %v", username, err)
-		return
+		return writeFailed
 	}
 
 	comment := protocol.Format(human, protocol.Meta{
@@ -471,8 +538,12 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 		}))
 	}
 	if err := client.SetComment(id, comment); err != nil {
+		// The tracks are already in the playlist, so this IS a write. Failing
+		// the slot here would rewrite the same tracks on the next pass to fix
+		// a description, which costs more than the missing line is worth.
 		logf("user %s: writing description: %v", username, err)
 	}
+	return writeOK
 }
 
 func kindFor(slot mixes.Slot) string {
