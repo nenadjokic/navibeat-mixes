@@ -102,27 +102,27 @@
           "title": "Wrapped yearly recap",
           "default": true
         },
-        "name.morning": {
+        "nameMorning": {
           "type": "string",
           "title": "Name: Morning",
           "default": "Morning"
         },
-        "name.afternoon": {
+        "nameAfternoon": {
           "type": "string",
           "title": "Name: Afternoon",
           "default": "Afternoon"
         },
-        "name.evening": {
+        "nameEvening": {
           "type": "string",
           "title": "Name: Evening",
           "default": "Evening"
         },
-        "name.night": {
+        "nameNight": {
           "type": "string",
           "title": "Name: Night",
           "default": "Night"
         },
-        "name.rediscover": {
+        "nameRediscover": {
           "type": "string",
           "title": "Name: Rediscover",
           "default": "Rediscover"
@@ -203,7 +203,7 @@
           "default": "cover",
           "description": "Only NaviBeat reads this; other clients are unaffected. \"cover\" is NaviBeat's own generated artwork, \"button\" is a compact row of buttons with an icon instead of artwork, \"mosaic\" leaves the server's usual 2x2 album grid alone."
         },
-        "icon.morning": {
+        "iconMorning": {
           "type": "string",
           "title": "Icon: Morning",
           "enum": [
@@ -226,13 +226,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.morning": {
+        "colorMorning": {
           "type": "string",
           "title": "Colour: Morning",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.afternoon": {
+        "iconAfternoon": {
           "type": "string",
           "title": "Icon: Afternoon",
           "enum": [
@@ -255,13 +255,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.afternoon": {
+        "colorAfternoon": {
           "type": "string",
           "title": "Colour: Afternoon",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.evening": {
+        "iconEvening": {
           "type": "string",
           "title": "Icon: Evening",
           "enum": [
@@ -284,13 +284,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.evening": {
+        "colorEvening": {
           "type": "string",
           "title": "Colour: Evening",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.night": {
+        "iconNight": {
           "type": "string",
           "title": "Icon: Night",
           "enum": [
@@ -313,13 +313,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.night": {
+        "colorNight": {
           "type": "string",
           "title": "Colour: Night",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.rediscover": {
+        "iconRediscover": {
           "type": "string",
           "title": "Icon: Rediscover",
           "enum": [
@@ -342,13 +342,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.rediscover": {
+        "colorRediscover": {
           "type": "string",
           "title": "Colour: Rediscover",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.newmusic": {
+        "iconNewMusic": {
           "type": "string",
           "title": "Icon: New Music",
           "enum": [
@@ -371,13 +371,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.newmusic": {
+        "colorNewusic": {
           "type": "string",
           "title": "Colour: New Music",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.loved": {
+        "iconLoved": {
           "type": "string",
           "title": "Icon: Loved",
           "enum": [
@@ -400,13 +400,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.loved": {
+        "colorLoved": {
           "type": "string",
           "title": "Colour: Loved",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.onrepeat": {
+        "iconOnRepeat": {
           "type": "string",
           "title": "Icon: On Repeat",
           "enum": [
@@ -429,13 +429,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.onrepeat": {
+        "colorOnRepeat": {
           "type": "string",
           "title": "Colour: On Repeat",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.essentials": {
+        "iconEssentials": {
           "type": "string",
           "title": "Icon: Essentials",
           "enum": [
@@ -458,13 +458,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.essentials": {
+        "colorEssentials": {
           "type": "string",
           "title": "Colour: Essentials",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.discovery": {
+        "iconDiscovery": {
           "type": "string",
           "title": "Icon: Discovery",
           "enum": [
@@ -487,13 +487,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.discovery": {
+        "colorDiscovery": {
           "type": "string",
           "title": "Colour: Discovery",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.genreradio": {
+        "iconGenreRadio": {
           "type": "string",
           "title": "Icon: Genre Radio",
           "enum": [
@@ -516,13 +516,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.genreradio": {
+        "colorGenreRadio": {
           "type": "string",
           "title": "Colour: Genre Radio",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.artistradio": {
+        "iconArtistRadio": {
           "type": "string",
           "title": "Icon: Artist Radio",
           "enum": [
@@ -545,13 +545,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.artistradio": {
+        "colorArtistRadio": {
           "type": "string",
           "title": "Colour: Artist Radio",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.dailymix": {
+        "iconDailyMix": {
           "type": "string",
           "title": "Icon: Daily Mix",
           "enum": [
@@ -574,13 +574,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.dailymix": {
+        "colorDailyMix": {
           "type": "string",
           "title": "Colour: Daily Mix",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.decade": {
+        "iconDecade": {
           "type": "string",
           "title": "Icon: Decade",
           "enum": [
@@ -603,13 +603,13 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.decade": {
+        "colorDecade": {
           "type": "string",
           "title": "Colour: Decade",
           "default": "",
           "description": "Six hex digits, for example F2A65A. Leave empty for the built-in colour."
         },
-        "icon.wrapped": {
+        "iconWrapped": {
           "type": "string",
           "title": "Icon: Wrapped",
           "enum": [
@@ -632,7 +632,7 @@
           "default": "",
           "description": "Leave empty for the built-in icon."
         },
-        "color.wrapped": {
+        "colorWrapped": {
           "type": "string",
           "title": "Colour: Wrapped",
           "default": "",
@@ -733,23 +733,23 @@
           "elements": [
             {
               "type": "Control",
-              "scope": "#/properties/name.morning"
+              "scope": "#/properties/nameMorning"
             },
             {
               "type": "Control",
-              "scope": "#/properties/name.afternoon"
+              "scope": "#/properties/nameAfternoon"
             },
             {
               "type": "Control",
-              "scope": "#/properties/name.evening"
+              "scope": "#/properties/nameEvening"
             },
             {
               "type": "Control",
-              "scope": "#/properties/name.night"
+              "scope": "#/properties/nameNight"
             },
             {
               "type": "Control",
-              "scope": "#/properties/name.rediscover"
+              "scope": "#/properties/nameRediscover"
             }
           ]
         },
@@ -801,123 +801,123 @@
           "elements": [
             {
               "type": "Control",
-              "scope": "#/properties/icon.morning"
+              "scope": "#/properties/iconMorning"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.morning"
+              "scope": "#/properties/colorMorning"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.afternoon"
+              "scope": "#/properties/iconAfternoon"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.afternoon"
+              "scope": "#/properties/colorAfternoon"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.evening"
+              "scope": "#/properties/iconEvening"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.evening"
+              "scope": "#/properties/colorEvening"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.night"
+              "scope": "#/properties/iconNight"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.night"
+              "scope": "#/properties/colorNight"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.rediscover"
+              "scope": "#/properties/iconRediscover"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.rediscover"
+              "scope": "#/properties/colorRediscover"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.newmusic"
+              "scope": "#/properties/iconNewMusic"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.newmusic"
+              "scope": "#/properties/colorNewMusic"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.loved"
+              "scope": "#/properties/iconLoved"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.loved"
+              "scope": "#/properties/colorLoved"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.onrepeat"
+              "scope": "#/properties/iconOnRepeat"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.onrepeat"
+              "scope": "#/properties/colorOnRepeat"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.essentials"
+              "scope": "#/properties/iconEssentials"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.essentials"
+              "scope": "#/properties/colorEssentials"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.discovery"
+              "scope": "#/properties/iconDiscovery"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.discovery"
+              "scope": "#/properties/colorDiscovery"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.genreradio"
+              "scope": "#/properties/iconGenreRadio"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.genreradio"
+              "scope": "#/properties/colorGenreRadio"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.artistradio"
+              "scope": "#/properties/iconArtistRadio"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.artistradio"
+              "scope": "#/properties/colorArtistRadio"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.dailymix"
+              "scope": "#/properties/iconDailyMix"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.dailymix"
+              "scope": "#/properties/colorDailyMix"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.decade"
+              "scope": "#/properties/iconDecade"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.decade"
+              "scope": "#/properties/colorDecade"
             },
             {
               "type": "Control",
-              "scope": "#/properties/icon.wrapped"
+              "scope": "#/properties/iconWrapped"
             },
             {
               "type": "Control",
-              "scope": "#/properties/color.wrapped"
+              "scope": "#/properties/colorWrapped"
             }
           ]
         }
