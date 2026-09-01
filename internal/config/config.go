@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -215,6 +216,103 @@ func Defaults() Config {
 	}
 }
 
+// nameSlots is every mix whose displayed name the user can change, with the
+// camel case suffix of its config key. Iterating a slice rather than the
+// SlotNames map keeps the read order fixed, which a map range does not.
+var nameSlots = []struct{ key, suffix string }{
+	{"morning", "Morning"}, {"afternoon", "Afternoon"},
+	{"evening", "Evening"}, {"night", "Night"},
+	{"rediscover", "Rediscover"},
+}
+
+// buttonFamilies is every mix family that can carry an icon and a colour
+// override. The key is the slot for time-of-day mixes and the kind for
+// everything else, which is exactly what ButtonFor resolves against. The
+// suffix matches the enable<Family> switches the same settings form already
+// renders, so the whole schema reads one way.
+var buttonFamilies = []struct{ key, suffix string }{
+	{"morning", "Morning"}, {"afternoon", "Afternoon"},
+	{"evening", "Evening"}, {"night", "Night"},
+	{"rediscover", "Rediscover"}, {"decade", "Decade"},
+	{"newmusic", "NewMusic"}, {"loved", "Loved"},
+	{"onrepeat", "OnRepeat"}, {"essentials", "Essentials"},
+	{"discovery", "Discovery"}, {"genreradio", "GenreRadio"},
+	{"artistradio", "ArtistRadio"}, {"dailymix", "DailyMix"},
+	{"wrapped", "Wrapped"},
+}
+
+// slotGroup reads one per-slot setting in all three shapes it can arrive in.
+//
+// A DOT in a config key is what FunkeCoder23 reported in issue #5: the Name
+// fields in Navidrome's plugin settings were empty, typing into them did not
+// stick, and no icon or colour was ever applied. Navidrome renders the schema
+// with JsonForms, whose toDataPath turns the scope "#/properties/name.morning"
+// into the data path "name.morning", and whose resolveData then SPLITS that
+// path on '.'. Measured against @jsonforms/core 2.5.2, the version Navidrome's
+// ui pins:
+//
+//	toDataPath("#/properties/name.morning")                  -> "name.morning"
+//	Resolve.data({"name.morning":"Morning"}, "name.morning") -> undefined
+//
+// So the control looked for a nested object, found nothing, and rendered an
+// empty box. The box stays empty because the renderer is fully controlled by
+// that same resolved value: OutlinedRenderers.jsx:107 binds the TextField's
+// value straight to it, so a typed character does not survive the next render.
+//
+// Which shape a pre-0.9.7 server ended up storing was also measured, against
+// the real 0.9.6 manifest and Navidrome's own Ajv (useDefaults: true, set in
+// ui/src/plugin/SchemaConfigEditor.jsx:44 and handed to JsonForms at :225).
+// Every one of the 35 dotted properties carried a schema default, so Ajv wrote
+// the LITERAL dotted key into the form data before any control rendered. From
+// then on lodash treats "name.morning" as one key rather than a path, and the
+// save comes back FLAT:
+//
+//	stored {} -> Ajv -> {"name.morning":"Morning", "icon.morning":"", ...}
+//	user edits    -> saved {"name.morning":"Jutro","icon.morning":"star", ...}
+//
+// That is why the dotted key is read BEFORE the nested blob: on a stock server
+// the flat dotted key is the value the owner typed, and a nested blob can only
+// come from somewhere else, in which case it is the older of the two. The
+// nested shape is read at all because Navidrome's parsePluginConfig keeps only
+// top-level keys and JSON-serializes anything nested, so a config holding one
+// reaches this plugin as config["name"] = "{\"morning\":\"Jutro\"}".
+//
+// The keys are dot free from 0.9.7 on. Both older shapes stay readable because
+// a server configured before the rename must not lose what its owner typed.
+type slotGroup struct {
+	get    Getter
+	group  string // "name", "icon" or "color", the top-level key of the blob
+	nested map[string]string
+	read   bool
+}
+
+// value resolves one slot: the dot free key first, then the old dotted key,
+// then the slot inside the nested blob.
+func (g *slotGroup) value(field, slot string) string {
+	if v := strings.TrimSpace(g.get(field)); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(g.get(g.group + "." + slot)); v != "" {
+		return v
+	}
+	if !g.read {
+		// Parsed once per group, not once per slot: a blob that is absent or
+		// unreadable must cost one look, not fifteen.
+		g.read = true
+		raw := strings.TrimSpace(g.get(g.group))
+		if strings.HasPrefix(raw, "{") {
+			var m map[string]string
+			if json.Unmarshal([]byte(raw), &m) == nil {
+				g.nested = make(map[string]string, len(m))
+				for k, v := range m {
+					g.nested[strings.ToLower(strings.TrimSpace(k))] = v
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(g.nested[slot])
+}
+
 // Load applies whatever the user set on top of the defaults. A value that does
 // not parse is ignored rather than fatal: a typo in one setting must not stop
 // the whole plugin from producing playlists.
@@ -259,9 +357,10 @@ func Load(get Getter) Config {
 	if strings.EqualFold(strings.TrimSpace(get("wrappedSharing")), "true") {
 		c.WrappedSharing = true
 	}
-	for slot := range c.SlotNames {
-		if v := strings.TrimSpace(get("name." + slot)); v != "" {
-			c.SlotNames[slot] = v
+	names := &slotGroup{get: get, group: "name"}
+	for _, s := range nameSlots {
+		if v := names.value("name"+s.suffix, s.key); v != "" {
+			c.SlotNames[s.key] = v
 		}
 	}
 	// Per-mix switches. Only an explicit value counts: an unset switch must
@@ -291,20 +390,16 @@ func Load(get Getter) Config {
 			c.MixStyle = v
 		}
 	}
-	// Per-family button overrides. Keyed by slot for time-of-day (all four
-	// share one kind) and by kind for everything else, which is exactly the
-	// key ButtonFor resolves against.
-	for _, key := range []string{
-		"morning", "afternoon", "evening", "night",
-		"rediscover", "decade", "newmusic", "loved", "onrepeat",
-		"essentials", "discovery", "genreradio", "artistradio",
-		"dailymix", "wrapped",
-	} {
-		if v := strings.TrimSpace(get("icon." + key)); v != "" {
-			c.ButtonIcons[key] = v
+	// Per-family button overrides, read through the same three shapes as the
+	// names above.
+	icons := &slotGroup{get: get, group: "icon"}
+	colors := &slotGroup{get: get, group: "color"}
+	for _, f := range buttonFamilies {
+		if v := icons.value("icon"+f.suffix, f.key); v != "" {
+			c.ButtonIcons[f.key] = v
 		}
-		if v := strings.TrimSpace(get("color." + key)); v != "" {
-			c.ButtonColors[key] = v
+		if v := colors.value("color"+f.suffix, f.key); v != "" {
+			c.ButtonColors[f.key] = v
 		}
 	}
 	return c

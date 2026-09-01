@@ -151,13 +151,22 @@ Two new groups in Navidrome's plugin settings:
 
 - **How NaviBeat draws them**: `mixStyle`, one of `cover` (NaviBeat's generated artwork, the
   default), `button`, or `mosaic` (the server's own album grid).
-- **Button icons and colours**: `icon.<family>` and `color.<family>` for the fifteen mix families.
-  Every one is optional; empty means the built-in default, which is why a server nobody configures
-  still gets a varied shelf.
+- **Button icons and colours**: `icon<Family>` and `color<Family>` for the fifteen mix families
+  (`iconMorning`, `colorGenreRadio` and so on). Every one is optional; empty means the built-in
+  default, which is why a server nobody configures still gets a varied shelf.
 
-The button LABEL is not a new field: it reuses the existing `name.<slot>` setting, so the button says
+The button LABEL is not a new field: it reuses the existing `name<Slot>` setting, so the button says
 what the user already named that mix, without the playlist-name prefix a button is too narrow to
 spend on.
 
 Nothing was added to the NaviBeat app. Its old "NaviBeat covers for generated mixes" toggle was
 removed on all five platforms in the same session, which is the entire point of this feature.
+
+### These keys lost their dot in 0.9.7
+
+They were `name.morning`, `icon.morning`, `color.morning` and so on until 0.9.7. Navidrome renders
+the config schema with JsonForms, which reads a dot in a key as a path separator, so those fields
+came up empty in the settings page and nothing typed into them ever reached the plugin (issue #5).
+The keys are now `nameMorning`, `iconMorning`, `colorMorning`. The plugin still reads both older
+shapes, the dotted key and the nested object JsonForms used to save, so an install configured before
+the rename keeps its names, icons and colours.
