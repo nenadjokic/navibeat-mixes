@@ -201,11 +201,11 @@ func Defaults() Config {
 		WrappedSharing:       false,
 		MixSwitches:          map[string]bool{},
 		SlotNames: map[string]string{
-			"morning":    "Morning",
-			"afternoon":  "Afternoon",
-			"evening":    "Evening",
-			"night":      "Night",
-			"rediscover": "Rediscover",
+			"Morning":    "Morning",
+			"Afternoon":  "Afternoon",
+			"Evening":    "Evening",
+			"Night":      "Night",
+			"Rediscover": "Rediscover",
 		},
 		// The default is the artwork every existing install already sees, so
 		// upgrading the plugin never changes how anybody's shelf looks.
@@ -260,7 +260,7 @@ func Load(get Getter) Config {
 		c.WrappedSharing = true
 	}
 	for slot := range c.SlotNames {
-		if v := strings.TrimSpace(get("name." + slot)); v != "" {
+		if v := strings.TrimSpace(get("name" + slot)); v != "" {
 			c.SlotNames[slot] = v
 		}
 	}
@@ -295,15 +295,15 @@ func Load(get Getter) Config {
 	// share one kind) and by kind for everything else, which is exactly the
 	// key ButtonFor resolves against.
 	for _, key := range []string{
-		"morning", "afternoon", "evening", "night",
-		"rediscover", "decade", "newmusic", "loved", "onrepeat",
-		"essentials", "discovery", "genreradio", "artistradio",
-		"dailymix", "wrapped",
+		"Morning", "Afternoon", "Evening", "Night",
+		"Rediscover", "Decade", "NewMusic", "Loved", "OnRepeat",
+		"Essentials", "Discovery", "GenreRadio", "ArtistRadio",
+		"DailyMix", "Wrapped",
 	} {
-		if v := strings.TrimSpace(get("icon." + key)); v != "" {
+		if v := strings.TrimSpace(get("icon" + key)); v != "" {
 			c.ButtonIcons[key] = v
 		}
-		if v := strings.TrimSpace(get("color." + key)); v != "" {
+		if v := strings.TrimSpace(get("color" + key)); v != "" {
 			c.ButtonColors[key] = v
 		}
 	}

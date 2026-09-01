@@ -55,7 +55,7 @@ func TestNonsenseValuesFallBackToDefaults(t *testing.T) {
 }
 
 func TestPrefixGainsATrailingSpace(t *testing.T) {
-	if got := Load(getterFrom(map[string]string{"prefix": "**"})).PlaylistName("morning"); got != "** Morning" {
+	if got := Load(getterFrom(map[string]string{"prefix": "**"})).PlaylistName("Morning"); got != "** Morning" {
 		t.Errorf("PlaylistName = %q, want %q", got, "** Morning")
 	}
 }

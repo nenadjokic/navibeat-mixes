@@ -17,11 +17,11 @@ import (
 type Slot string
 
 const (
-	Morning    Slot = "morning"
-	Afternoon  Slot = "afternoon"
-	Evening    Slot = "evening"
-	Night      Slot = "night"
-	Rediscover Slot = "rediscover"
+	Morning    Slot = "Morning"
+	Afternoon  Slot = "Afternoon"
+	Evening    Slot = "Evening"
+	Night      Slot = "Night"
+	Rediscover Slot = "Rediscover"
 )
 
 // TimeSlots are the four time-of-day mixes, in day order.
