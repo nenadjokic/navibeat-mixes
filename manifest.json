@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -140,6 +140,14 @@
           "minimum": 0.1,
           "maximum": 1,
           "description": "A genre on almost every track cannot tell two tracks apart, so it is ignored as a signal. 0.6 means 60 percent of your library."
+        },
+        "budgetSeconds": {
+          "type": "integer",
+          "title": "Seconds of work per call",
+          "default": 15,
+          "minimum": 3,
+          "maximum": 25,
+          "description": "Navidrome stops any plugin call after 30 seconds. The plugin works for this long, saves what it has, and asks for another call a few seconds later until every mix is written. Lower it if the log shows \"context deadline exceeded\" on a slow server."
         },
         "wrappedSharing": {
           "type": "boolean",
@@ -790,6 +798,10 @@
             {
               "type": "Control",
               "scope": "#/properties/genreNoiseThreshold"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/budgetSeconds"
             }
           ]
         },

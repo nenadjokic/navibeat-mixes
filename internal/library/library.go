@@ -206,109 +206,15 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 	return c.CandidatesWith(CandidateOptions{AlbumPages: albumPages})
 }
 
-// CandidatesWith is Candidates with the pool options spelled out.
+// CandidatesWith is Candidates with the pool options spelled out. It fetches
+// the whole pool in one go; the plugin itself goes through Assemble so the
+// fetch can stop at the budget and continue in a later call.
 func (c *Client) CandidatesWith(opts CandidateOptions) ([]mixes.Track, error) {
-	// index maps a track id to its position in out, so a later pass can
-	// refine a track that an earlier pass already added.
-	index := map[string]int{}
-	// precision remembers how exact each track's Released is, so a later
-	// album pass only ever makes it more exact and never less.
-	precision := map[string]int{}
-	var out []mixes.Track
-
-	// add folds one list of songs into the pool. `al` is the album they came
-	// from, nil for getStarred2, which returns songs without their album.
-	//
-	// A song already in the pool is not added twice, but its release date may
-	// still be refined: getStarred2 runs first and carries only the song's
-	// `year`, so a starred track that also sits in a fetched album would
-	// otherwise keep 1 January while the album knows the day.
-	add := func(songs []song, al *album) {
-		for _, s := range songs {
-			if s.ID == "" {
-				continue
-			}
-			released, exact := releasedFrom(al, s)
-			if i, ok := index[s.ID]; ok {
-				if exact > precision[s.ID] {
-					out[i].Released = released
-					precision[s.ID] = exact
-				}
-				continue
-			}
-			index[s.ID] = len(out)
-			precision[s.ID] = exact
-			out = append(out, mixes.Track{
-				ID:         s.ID,
-				Title:      s.Title,
-				Artist:     s.Artist,
-				Genre:      s.Genre,
-				Genres:     s.genreNames(),
-				Year:       s.Year,
-				PlayCount:  s.PlayCount,
-				LastPlayed: parseTime(s.Played),
-				Added:      parseTime(s.Created),
-				Released:   released,
-				Starred:    s.Starred != "",
-			})
-		}
-	}
-
-	if env, err := c.do("getStarred2", url.Values{}); err == nil {
-		add(env.Response.Starred2.Song, nil)
-	} else {
+	p, err := c.Assemble(opts, nil, nil)
+	if err != nil {
 		return nil, err
 	}
-
-	// Album ids are deduplicated ACROSS the lists, not just inside each one.
-	// The overlap is not marginal: on a server in daily use the same records
-	// are both the most played and the most recently played, so the old code
-	// spent a full getAlbum round trip on each of them twice. Paying that back
-	// is what buys the third list below at roughly the old cost.
-	seenAlbum := map[string]bool{}
-	fetchList := func(params url.Values) error {
-		params.Set("size", strconv.Itoa(opts.AlbumPages))
-		env, err := c.do("getAlbumList2", params)
-		if err != nil {
-			return err
-		}
-		for _, al := range env.Response.AlbumList2.Album {
-			if al.ID == "" || seenAlbum[al.ID] {
-				continue
-			}
-			seenAlbum[al.ID] = true
-			detail, err := c.do("getAlbum", url.Values{"id": {al.ID}})
-			if err != nil {
-				// One unreadable album must not abort the whole run.
-				continue
-			}
-			add(detail.Response.Album.Song, &detail.Response.Album)
-		}
-		return nil
-	}
-	for _, listType := range []string{"newest", "frequent", "recent"} {
-		if err := fetchList(url.Values{"type": {listType}}); err != nil {
-			return nil, err
-		}
-	}
-	// The release-date window, only when the released order asked for it: it
-	// costs up to AlbumPages more getAlbum calls, and nobody else uses it.
-	//
-	// fromYear ABOVE toYear is deliberate and is what makes the list come back
-	// newest first: Navidrome swaps the two and sets a descending order when
-	// they arrive that way round (server/subsonic/filter/filters.go,
-	// AlbumsByYear), sorted on the original date, then the release date.
-	if opts.ByReleaseDate && opts.Year > 0 {
-		if err := fetchList(url.Values{
-			"type":     {"byYear"},
-			"fromYear": {strconv.Itoa(opts.Year)},
-			"toYear":   {strconv.Itoa(opts.Year - releaseWindowYears)},
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	return out, nil
+	return p.Tracks(), nil
 }
 
 // Release date precision, for refining a track across passes. A higher value

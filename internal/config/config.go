@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/nenadjokic/navibeat-mixes/internal/resume"
 )
 
 // Getter reads a raw config value. It exists so the whole package is testable
@@ -95,7 +98,20 @@ type Config struct {
 	// oldest music. Default "added", which is the only order there was
 	// before 0.9.8, so an upgrade changes nothing for anybody.
 	NewMusicOrder string
+	// BudgetSeconds is how long one host call may work before the plugin
+	// parks what it has and asks for a continuation. Navidrome stops any
+	// plugin call at 30 seconds, so the ceiling stays well under that; the
+	// floor exists because a budget shorter than one Subsonic page on a
+	// slow server would continue forever and finish nothing.
+	BudgetSeconds int
 }
+
+// Budget limits, in seconds. MaxBudgetSeconds leaves five seconds under the
+// host's deadline for the step in flight plus the ledger and pool writes.
+const (
+	MinBudgetSeconds = 3
+	MaxBudgetSeconds = 25
+)
 
 // DefaultButtonIcons is the built-in icon per mix family, and the reason a
 // server nobody has configured still gets a shelf that reads as several
@@ -221,6 +237,7 @@ func Defaults() Config {
 		ButtonIcons:   map[string]string{},
 		ButtonColors:  map[string]string{},
 		NewMusicOrder: "added",
+		BudgetSeconds: int(resume.DefaultLimit / time.Second),
 	}
 }
 
@@ -406,6 +423,18 @@ func Load(get Getter) Config {
 		case "added", "released":
 			c.NewMusicOrder = v
 		}
+	}
+	// The per-call budget. Clamped rather than rejected: a person who types
+	// 60 on a slow server means "give it more time", and 25 is the most that
+	// can be given under the host's 30 second deadline.
+	if n, ok := positiveInt(get("budgetSeconds")); ok {
+		if n < MinBudgetSeconds {
+			n = MinBudgetSeconds
+		}
+		if n > MaxBudgetSeconds {
+			n = MaxBudgetSeconds
+		}
+		c.BudgetSeconds = n
 	}
 	// Per-family button overrides, read through the same three shapes as the
 	// names above.

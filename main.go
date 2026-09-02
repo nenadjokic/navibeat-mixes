@@ -62,10 +62,21 @@ const (
 	controlName       = "NaviBeat control"
 
 	// A run that does not fit in one host call continues in another one a few
-	// seconds later. See internal/resume for why this exists at all.
-	continueScheduleID = "navibeat-mixes-continue"
-	continueDelaySec   = 5
-	ledgerKey          = "run:ledger"
+	// seconds later. See internal/resume for why this exists at all, and
+	// resume.Continue for why the schedule id is numbered rather than fixed.
+	continueDelaySec = 5
+	// The first generation after a load is a scheduled call, not part of
+	// OnInit: the host kills a plugin call after 30 seconds, OnInit included
+	// (plugins/capability_lifecycle.go goes through the same
+	// callPluginFunction as a callback), and on 2026-09-02 a slow server
+	// logged "Plugin init function failed ... context deadline exceeded"
+	// while OnInit was still fetching the first user's pool. Ten seconds is
+	// long enough for the host to finish loading everything else first.
+	initDelaySec = 10
+	ledgerKey    = "run:ledger"
+	// A parked candidate pool outlives the run it belongs to by a day at
+	// most; DecodePool refuses it by key long before that.
+	poolTTLSec = 24 * 60 * 60
 )
 
 func init() {
@@ -87,9 +98,15 @@ var (
 	_ scheduler.CallbackProvider = (*plugin)(nil)
 )
 
-// OnInit registers the daily schedule and generates once immediately, so a
-// user who just installed the plugin sees playlists now rather than tomorrow
-// morning. First impressions decide whether the plugin stays enabled.
+// OnInit registers the daily schedule and asks for a generation a few
+// seconds out, so a user who just installed the plugin sees playlists within
+// the minute rather than tomorrow morning. First impressions decide whether
+// the plugin stays enabled.
+//
+// The generation is NOT run inline (0.9.1 to 0.9.8 did): OnInit is a plugin
+// call like any other and the host kills it at 30 seconds, and a slow server
+// took longer than that on the first user's pool alone. Scheduled, the same
+// work runs under the budget and the continuation chain like every other run.
 func (p *plugin) OnInit() error {
 	if _, err := host.SchedulerScheduleRecurring(scheduleCron, "generate", scheduleID); err != nil {
 		logf("could not register the daily schedule: %v", err)
@@ -97,13 +114,54 @@ func (p *plugin) OnInit() error {
 	if _, err := host.SchedulerScheduleRecurring(controlCron, "control", controlScheduleID); err != nil {
 		logf("could not register the control poll: %v", err)
 	}
+	// The host forgets every schedule when the plugin unloads, so a
+	// continuation remembered from before this load is stale by definition.
+	if stale := resume.CancelStale(hostScheduler{}, hostStore{}); stale != "" {
+		logf("forgot the continuation %s left over from before this load", stale)
+	}
 	// 0.9.4: a load is a fresh start. 0.9.1's ledger made an upgrade on the
 	// same day report "generation complete in 0s" and build nothing, because
 	// the morning's run had already marked every user done. Someone who just
 	// installed or upgraded the plugin is owed a full run now, so the day's
 	// ledger is forgotten before it starts.
 	saveLedger(resume.NewLedger(resume.DayOf(time.Now())))
-	return generateAll()
+	id, err := resume.Continue(hostScheduler{}, hostStore{}, initDelaySec, "generate")
+	if err != nil {
+		logf("could not schedule the first generation: %v", err)
+		return nil
+	}
+	logf("first generation scheduled in %ds as %s, so the load stays inside the host's deadline", initDelaySec, id)
+	return nil
+}
+
+// hostScheduler and hostStore hand the real host functions to the resume
+// package, which is kept free of the plugin SDK so its tests run as ordinary
+// Go against a fake that behaves the way Navidrome's scheduler does.
+type hostScheduler struct{}
+
+func (hostScheduler) ScheduleOneTime(delay int32, payload, id string) (string, error) {
+	return host.SchedulerScheduleOneTime(delay, payload, id)
+}
+func (hostScheduler) CancelSchedule(id string) error { return host.SchedulerCancelSchedule(id) }
+
+type hostStore struct{}
+
+func (hostStore) Get(key string) ([]byte, bool, error) { return host.KVStoreGet(key) }
+func (hostStore) Set(key string, value []byte) error   { return host.KVStoreSet(key, value) }
+func (hostStore) Delete(key string) error              { return host.KVStoreDelete(key) }
+
+// scheduleContinuation asks the host for one more generate call, and says
+// what the budget looked like when it gave up, so the log can tell a chain
+// that is making progress from a server that is simply too slow.
+func scheduleContinuation(budget *resume.Budget, username string) {
+	id, err := resume.Continue(hostScheduler{}, hostStore{}, continueDelaySec, "generate")
+	if err != nil {
+		logf("could not schedule the continuation: %v", err)
+		return
+	}
+	logf("budget of %v spent after %v (%d steps, the last took %v) with %s unfinished, continuing in %ds as %s",
+		budget.Limit(), budget.Elapsed().Round(time.Millisecond), budget.Steps(),
+		budget.LastStep().Round(time.Millisecond), username, continueDelaySec, id)
 }
 
 // OnCallback runs whichever job fired. The control poll is deliberately a
@@ -131,11 +189,18 @@ func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 // per-day ledger of what it has written, stops when its time budget is
 // spent, and asks the host to call it again in a few seconds; the next call
 // skips everything already in the ledger.
+//
+// Found again on the same server (2026-09-02), slower still: the candidate
+// pool alone took longer than 30 seconds, and the budget was only checked
+// after it, so nothing was written for a week. The budget is now checked
+// after every Subsonic page, a half-built pool is parked in the kvstore for
+// the next call, and each call stops as soon as the time left would not fit
+// a step like the last one (see resume.Budget).
 func generateAll() error {
-	budget := resume.StartBudget(resume.DefaultLimit, time.Now)
+	cfg := config.Load(func(key string) string { v, _ := pdk.GetConfig(key); return v })
+	budget := resume.StartBudget(time.Duration(cfg.BudgetSeconds)*time.Second, time.Now)
 	day := resume.DayOf(time.Now())
 	ledger := loadLedger(day)
-	cfg := config.Load(func(key string) string { v, _ := pdk.GetConfig(key); return v })
 
 	users, err := host.UsersGetUsers()
 	if err != nil || len(users) == 0 {
@@ -167,12 +232,7 @@ func generateAll() error {
 		if !finished {
 			// Out of time with work left: hand the rest to the next call
 			// rather than be killed mid-write with nothing to say about it.
-			if _, err := host.SchedulerScheduleOneTime(continueDelaySec, "generate", continueScheduleID); err != nil {
-				logf("could not schedule the continuation: %v", err)
-				return nil
-			}
-			logf("budget of %v spent after %v with %s unfinished, continuing in %ds",
-				resume.DefaultLimit, budget.Elapsed().Round(time.Second), u.UserName, continueDelaySec)
+			scheduleContinuation(budget, u.UserName)
 			return nil
 		}
 	}
@@ -182,7 +242,7 @@ func generateAll() error {
 		// typo in the list is exactly how that happens.
 		logf("skipped %d user(s): not in the configured account list", skipped)
 	}
-	logf("generation complete for %s in %v", day, budget.Elapsed().Round(time.Second))
+	logf("generation complete for %s in %v", day, budget.Elapsed().Round(time.Millisecond))
 	return nil
 }
 
@@ -200,26 +260,104 @@ func saveLedger(l *resume.Ledger) {
 	}
 }
 
+// The parked candidate pool, one key per user, kept only between the calls
+// of one unfinished run.
+
+func poolKey(username string) string { return "pool:" + username }
+
+func loadPool(username, runKey string) *library.Pool {
+	data, ok, err := host.KVStoreGet(poolKey(username))
+	if err != nil || !ok {
+		return nil
+	}
+	return library.DecodePool(data, runKey)
+}
+
+// parkPool saves the pool for the next call. A failed save is logged with
+// the size, because the one way it fails is the kvstore's 1 MB cap, and the
+// run still continues: the next call fetches the pool again, and the ledger's
+// stall counter (resume.MaxStalls) stops that from going on forever.
+func parkPool(username string, p *library.Pool) {
+	data := p.Encode()
+	if err := host.KVStoreSetWithTTL(poolKey(username), data, poolTTLSec); err != nil {
+		logf("user %s: could not park the candidate pool (%d bytes): %v, the next call fetches it again",
+			username, len(data), err)
+	}
+}
+
+func deletePool(username string) {
+	// A key that is not there is not an error worth a log line.
+	_ = host.KVStoreDelete(poolKey(username))
+}
+
 // generateForUser writes one user's plan, skipping what the ledger already
 // holds for today and stopping when the budget is spent. Returns whether the
 // user is finished; false means "call again".
 func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, budget *resume.Budget) (bool, error) {
+	// The guard against a chain that cannot end. A user whose plan got no
+	// further in each of the last few calls has a server this plugin cannot
+	// serve today, and the log should say so once rather than every five
+	// seconds. A slow chain that is still moving is left alone.
+	if stalls := ledger.Stalled(username); stalls >= resume.MaxStalls {
+		logf("user %s: giving up for today, %d calls in a row made no progress", username, stalls)
+		deletePool(username)
+		ledger.MarkUserDone(username)
+		return true, nil
+	}
+
 	client := library.New(host.SubsonicAPICall, username)
 
 	// The release-date list is fetched only when New Music is enabled and set
 	// to rank on it: it is the one consumer, and it costs up to albumPages
 	// more getAlbum calls per user per run.
 	byRelease := cfg.MixEnabled("newmusic") && cfg.NewMusicOrder == string(mixes.NewMusicByReleased)
-	tracks, err := client.CandidatesWith(library.CandidateOptions{
+	opts := library.CandidateOptions{
 		AlbumPages:    albumPages,
 		ByReleaseDate: byRelease,
 		Year:          time.Now().Year(),
-	})
+	}
+	// The parked pool is only ever this run's: same day, same options.
+	runKey := ledger.Day + "|" + strconv.Itoa(albumPages) + "|" + strconv.FormatBool(byRelease) + "|" + strconv.Itoa(opts.Year)
+
+	pool := loadPool(username, runKey)
+	parked := pool != nil
+	loadedComplete := parked && pool.Complete
+	// progress is the number Advance compares between calls: it grows with
+	// every page fetched and again with every playlist written, so a call
+	// that ends where the last one did is a stall and nothing else is.
+	progress := func() int {
+		n := len(pool.Items)
+		if pool.Complete {
+			n += 1 << 20
+		}
+		return n + (len(ledger.DoneSlots(username)) << 21)
+	}
+	pool, err := client.Assemble(opts, pool, budget)
+	pool.Key = runKey
 	if err != nil {
+		// Whatever was fetched before the failure is kept for the retry.
+		parkPool(username, pool)
+		ledger.Advance(username, progress())
 		return true, err
 	}
+	if !pool.Complete {
+		parkPool(username, pool)
+		ledger.Advance(username, progress())
+		logf("user %s: candidate pool at %d tracks from %d albums after %v, parked for the next call",
+			username, len(pool.Items), pool.Albums(), budget.Elapsed().Round(time.Millisecond))
+		return false, nil
+	}
+	switch {
+	case loadedComplete:
+		logf("user %s: candidate pool of %d tracks loaded from the last call", username, len(pool.Items))
+	case parked:
+		logf("user %s: candidate pool resumed and completed, %d tracks from %d albums after %v",
+			username, len(pool.Items), pool.Albums(), budget.Elapsed().Round(time.Millisecond))
+	}
+	tracks := pool.Tracks()
 	if len(tracks) == 0 {
 		logf("user %s: no candidate tracks yet, skipping", username)
+		deletePool(username)
 		ledger.MarkUserDone(username)
 		return true, nil
 	}
@@ -347,16 +485,25 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
 	}
 
+	// Building the plan is one piece of CPU work per call, not a step of
+	// the kind the writes are measured by, so it is marked off rather than
+	// counted: the first write is judged by the limit alone.
+	budget.Mark()
 	written := 0
 	for _, e := range plan {
 		if ledger.SlotDone(username, e.slot) {
 			continue
 		}
 		if budget.Spent() {
-			if written > 0 || len(ledger.DoneSlots(username)) > 0 {
-				logf("user %s: %d of %d mixes written so far, the rest continue in the next call",
-					username, len(ledger.DoneSlots(username)), len(plan))
+			// The pool is complete, so it is parked as it stands: the next
+			// call decodes it from the kvstore instead of spending three
+			// hundred Subsonic calls to fetch the same thing again.
+			if !loadedComplete {
+				parkPool(username, pool)
 			}
+			ledger.Advance(username, progress())
+			logf("user %s: %d of %d mixes written so far, the rest continue in the next call",
+				username, len(ledger.DoneSlots(username)), len(plan))
 			return false, nil
 		}
 		human := e.human
@@ -387,6 +534,9 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		if outcome == writeOK {
 			written++
 		}
+		// One playlist is one step: four or five Subsonic calls, and on a
+		// slow server the yardstick for whether another one fits.
+		budget.Step()
 	}
 	// #F531: publish the style in the same pass that wrote the mixes, so a
 	// setting change lands everywhere at once instead of the tiles moving now
@@ -394,6 +544,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	if target := controlPlaylistFor(client, cfg); target != nil {
 		publishStyle(client, cfg, target)
 	}
+	deletePool(username)
 	ledger.MarkUserDone(username)
 	return true, nil
 }
@@ -804,13 +955,14 @@ func regenerateUserNow(cfg config.Config, username string) error {
 	day := resume.DayOf(time.Now())
 	ledger := loadLedger(day)
 	ledger.ResetUser(username)
-	budget := resume.StartBudget(resume.DefaultLimit, time.Now)
+	// A re-roll is a request for a fresh look at the library, so the pool
+	// parked by an earlier call today goes too.
+	deletePool(username)
+	budget := resume.StartBudget(time.Duration(cfg.BudgetSeconds)*time.Second, time.Now)
 	finished, err := generateForUser(cfg, username, ledger, budget)
 	saveLedger(ledger)
 	if !finished {
-		if _, serr := host.SchedulerScheduleOneTime(continueDelaySec, "generate", continueScheduleID); serr != nil {
-			logf("could not schedule the continuation: %v", serr)
-		}
+		scheduleContinuation(budget, username)
 	}
 	return err
 }

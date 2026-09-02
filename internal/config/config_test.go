@@ -353,3 +353,22 @@ func TestNewMusicOrderIgnoresAnUnknownValue(t *testing.T) {
 		}
 	}
 }
+
+// The per-call budget: 15 seconds unless set, clamped to what fits under the
+// host's 30 second deadline, and a typo leaves the default alone.
+func TestBudgetSecondsIsClampedUnderTheHostDeadline(t *testing.T) {
+	if got := Load(func(string) string { return "" }).BudgetSeconds; got != 15 {
+		t.Fatalf("default budget = %d, want 15", got)
+	}
+	for raw, want := range map[string]int{"10": 10, "60": 25, "1": 3, "abc": 15, "-4": 15} {
+		got := Load(func(key string) string {
+			if key == "budgetSeconds" {
+				return raw
+			}
+			return ""
+		}).BudgetSeconds
+		if got != want {
+			t.Errorf("budgetSeconds=%q -> %d, want %d", raw, got, want)
+		}
+	}
+}

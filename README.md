@@ -168,7 +168,7 @@ files, no restart. Five groups:
 | Playlists | The name prefix, which accounts get mixes, and how many tracks each mix holds |
 | Which mixes to build | A switch per mix, so you can turn off any you do not want, and what New Music counts as new |
 | Names | Rename any mix, so they can speak your language |
-| Tuning | Rediscover age, how soon mixes become time-aware, genre filtering |
+| Tuning | Rediscover age, how soon mixes become time-aware, genre filtering, seconds of work per call |
 | Sharing | Wrapped sharing, off by default |
 
 Every field has a default that works on a server nobody has touched, so you can
@@ -234,6 +234,27 @@ server, including other people's private ones. That is Navidrome's own rule, not
 this plugin's, so an admin account will always see more playlists than a regular
 one. Narrowing the list above is what shortens it.
 
+### On a slow server
+
+Navidrome stops any plugin call after 30 seconds, and a full run is about 300
+Subsonic calls per account plus the playlist writes, which a NAS in the middle
+of a library scan cannot always fit in one call. So the plugin does not try
+to. It works for `budgetSeconds` (15 by default), checks the clock after every
+page it fetches and every playlist it writes, and stops as soon as the time
+left is shorter than the last step took. What it has by then is saved: the
+playlists already written go in a per-day ledger, and a half-built candidate
+pool is parked in the plugin's own key-value store, compressed, so the next
+call carries on from that page instead of starting over. Then it asks
+Navidrome to call it again five seconds later, and keeps doing that until
+every mix is written. A plugin load works the same way: the first generation
+is scheduled a few seconds after the load rather than run inside it. The log
+says what happened at each hand-over ("budget of 15s spent after 13.2s ...
+continuing in 5s as navibeat-mixes-continue-2"). A chain that is still
+moving is never cut, however many calls it takes; one that gets no further
+three calls in a row is given up for the day, and the log says so once. Lower
+`budgetSeconds` if the log still shows "context deadline exceeded"; it cannot
+go below 3 or above 25.
+
 ### Why the genre threshold exists
 
 Tagging tools sometimes write a single genre across an entire library. One real
@@ -254,8 +275,10 @@ installing, it more than halves the binary that ships to every user:
 
 | Toolchain | Size |
 |---|---|
-| TinyGo | **1.5 MB** |
-| Standard Go | 3.9 MB |
+| TinyGo | **2.0 MB** |
+| Standard Go | 4.2 MB |
+
+(Measured on 0.9.9, which added `compress/gzip` for the parked candidate pool.)
 
 ## Development
 
