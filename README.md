@@ -34,7 +34,7 @@ Up to 23 playlists, every one of them optional.
 |---|---|
 | Morning / Afternoon / Evening / Night | What you play in that part of the day |
 | Rediscover | Music you loved and have left alone longest |
-| New Music | The newest additions to your library |
+| New Music | The newest additions to your library, or the newest releases in it: your choice |
 | Your Loved Songs | Everything you starred, oldest favourite first |
 | On Repeat | What you have been playing over and over lately |
 | Your Essentials | Your most played of all time |
@@ -74,6 +74,16 @@ starred and when you last played each track, so there is nothing to wait for.
 chose. The Subsonic API exposes only a track's *last* play, never the
 individual plays, so there is no way to ask a server what you listen to at
 08:00. The plugin has to watch plays go past and build that picture itself.
+
+**Navidrome's own listen history cannot shorten that wait yet.** Navidrome
+0.59.0 and newer records every play in its own scrobbles table, but through
+0.63.2 nothing exposes that table: not the Subsonic API, not the native API,
+and not the services a plugin can call, so the plugin has no way to read it and
+the same plays are remembered twice, once by Navidrome and once here. A host
+service that hands a plugin exactly that history was merged into Navidrome's
+development branch on 2026-08-09 (navidrome/navidrome PR #5795) and is in no
+release yet; the first NaviBeat Mixes release after a Navidrome release ships
+it will read the history from the server and start personal on day one.
 
 Until it has enough (150 plays by default), the mixes are built from your most
 played music instead, and **each playlist says so in its own description**:
@@ -156,7 +166,7 @@ files, no restart. Five groups:
 | Group | What you can change |
 |---|---|
 | Playlists | The name prefix, which accounts get mixes, and how many tracks each mix holds |
-| Which mixes to build | A switch per mix, so you can turn off any you do not want |
+| Which mixes to build | A switch per mix, so you can turn off any you do not want, and what New Music counts as new |
 | Names | Rename any mix, so they can speak your language |
 | Tuning | Rediscover age, how soon mixes become time-aware, genre filtering |
 | Sharing | Wrapped sharing, off by default |
@@ -170,6 +180,37 @@ nothing you starred has gone six months untouched. Lower the Rediscover age to
 
 **A mix needs at least 10 tracks to be worth making**, so an account with very
 little listening history gets no playlists rather than a four track one.
+
+### What New Music counts as new
+
+By default New Music ranks on the date a file **reached your server**, which
+every Subsonic server sends for every song. On a library that is still being
+ripped that is not always what you want: a 1984 record added yesterday is the
+newest file on the server and the oldest music in the mix.
+
+`newMusicOrder` (the "New Music: what counts as new" dropdown) has two values:
+
+| Value | New Music ranks on |
+|---|---|
+| `added` | When the file reached your server. The default, and the only order before 0.9.8. |
+| `released` | The release date in your tags, newest first. Tracks with no date at all fall back to the added date. |
+
+In `released` order the date comes from the album's `originalReleaseDate`, then
+its `releaseDate`, then its `year`, then the song's own `year`, so a 2015
+remaster of a 1975 record stays a 1975 record. A year-only tag counts as
+1 January of that year, so within one year an album tagged with a full date
+ranks ahead of one tagged with only the year. Two tracks released the same day
+are ordered by the added date, newest arrival first.
+
+The pool also grows in this mode: the plugin fetches the albums released this
+year and the two years before it on top of the usual lists, so this year's
+records are in the mix whatever day they were added. That costs up to one
+extra `getAlbum` call per album in that list, only for accounts with this
+order set, and only while New Music is enabled.
+
+A library with no dates in its tags comes out in exactly the added order, so
+the setting can never make the mix worse than the default. Played tracks still
+go behind unplayed ones in both orders.
 
 ### On a server with more than one account
 

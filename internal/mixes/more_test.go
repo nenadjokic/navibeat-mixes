@@ -700,3 +700,110 @@ func TestDailyMixRecognisesItsAnchorThroughRaggedArtistTags(t *testing.T) {
 		t.Errorf("Daily Mix selected %d tracks, under the 10 a mix needs, so its number goes missing on a library where Artist Radio is perfectly healthy", len(got))
 	}
 }
+
+// Steven O'Neil asked whether New Music was the release date or the date the
+// file was added. The default is, and stays, the added date: this pins that
+// BuildNewMusic and BuildNewMusicBy with "added" give the same answer, so an
+// upgrade cannot reorder anybody's pinned playlist.
+func TestNewMusicDefaultOrderIsUnchangedByTheReleasedOption(t *testing.T) {
+	tracks := []Track{
+		{ID: "old-record-added-today", Added: ago(1 * day), Released: date(1984, 6, 1)},
+		{ID: "new-record-added-last-month", Added: ago(30 * day), Released: date(2026, 8, 1)},
+		{ID: "undated", Added: ago(10 * day)},
+	}
+	want := []string{"old-record-added-today", "undated", "new-record-added-last-month"}
+	for _, got := range []Selection{
+		BuildNewMusic(tracks, 10, 5),
+		BuildNewMusicBy(tracks, NewMusicByAdded, 10, 5),
+		// An order nobody defined is not an order: it must fall through to
+		// the default rather than to anything else.
+		BuildNewMusicBy(tracks, NewMusicOrder("typo"), 10, 5),
+	} {
+		if strings.Join(got.TrackIDs, ",") != strings.Join(want, ",") {
+			t.Errorf("selected %v, want the added order %v", got.TrackIDs, want)
+		}
+	}
+}
+
+// In released order the newest RELEASE leads, whatever day the file arrived,
+// and a track with no release date at all sorts behind every dated one.
+func TestNewMusicByReleasedRanksOnTheReleaseDate(t *testing.T) {
+	tracks := []Track{
+		{ID: "old-record-added-today", Added: ago(1 * day), Released: date(1984, 6, 1)},
+		{ID: "undated-added-today", Added: ago(1 * day)},
+		{ID: "new-record-added-last-month", Added: ago(30 * day), Released: date(2026, 8, 1)},
+		{ID: "newer-record-added-last-year", Added: ago(400 * day), Released: date(2026, 8, 15)},
+	}
+	got := BuildNewMusicBy(tracks, NewMusicByReleased, 10, 5)
+	want := []string{"newer-record-added-last-year", "new-record-added-last-month", "old-record-added-today", "undated-added-today"}
+	if strings.Join(got.TrackIDs, ",") != strings.Join(want, ",") {
+		t.Errorf("selected %v, want %v", got.TrackIDs, want)
+	}
+}
+
+// Mixed precision is a property of the tags and it is documented, not hidden:
+// a year-only date is 1 January, so a full date later in that same year
+// outranks it, and a full date in an EARLIER year never does.
+func TestNewMusicByReleasedOrdersMixedPrecisionAsDocumented(t *testing.T) {
+	tracks := []Track{
+		{ID: "year-only-2025", Released: date(2025, 1, 1)},
+		{ID: "full-date-2025", Released: date(2025, 3, 1)},
+		{ID: "full-date-2024", Released: date(2024, 12, 31)},
+	}
+	got := BuildNewMusicBy(tracks, NewMusicByReleased, 10, 5)
+	want := []string{"full-date-2025", "year-only-2025", "full-date-2024"}
+	if strings.Join(got.TrackIDs, ",") != strings.Join(want, ",") {
+		t.Errorf("selected %v, want %v", got.TrackIDs, want)
+	}
+}
+
+// Two tracks released the same day are broken by the added date, newest
+// arrival first, so a library tagged with years only still moves with what
+// arrived this week. Position stays the last resort.
+func TestNewMusicByReleasedBreaksTiesOnTheAddedDateThenPosition(t *testing.T) {
+	tracks := []Track{
+		{ID: "first-in-pool", Released: date(2026, 1, 1), Added: ago(30 * day)},
+		{ID: "second-in-pool", Released: date(2026, 1, 1), Added: ago(30 * day)},
+		{ID: "arrived-yesterday", Released: date(2026, 1, 1), Added: ago(1 * day)},
+	}
+	got := BuildNewMusicBy(tracks, NewMusicByReleased, 10, 5)
+	want := []string{"arrived-yesterday", "first-in-pool", "second-in-pool"}
+	if strings.Join(got.TrackIDs, ",") != strings.Join(want, ",") {
+		t.Errorf("selected %v, want %v", got.TrackIDs, want)
+	}
+}
+
+// Sly777's rule survives the new order: something already played goes behind
+// everything unheard, even when it is the newest release in the pool.
+func TestNewMusicByReleasedStillPushesPlayedTracksBehindUnplayed(t *testing.T) {
+	tracks := []Track{
+		{ID: "played-newest", PlayCount: 4, Released: date(2026, 8, 1)},
+		{ID: "unplayed-older", Released: date(2020, 1, 1)},
+	}
+	got := BuildNewMusicBy(tracks, NewMusicByReleased, 10, 5)
+	if len(got.TrackIDs) != 2 || got.TrackIDs[0] != "unplayed-older" {
+		t.Errorf("selected %v, want the unplayed track first", got.TrackIDs)
+	}
+}
+
+// A library with no dates at all comes out in exactly the added order, so the
+// released option can never make a mix worse than the default.
+func TestNewMusicByReleasedFallsBackToTheAddedOrderWithoutDates(t *testing.T) {
+	tracks := []Track{
+		{ID: "oldest", Added: ago(30 * day)},
+		{ID: "newest", Added: ago(1 * day)},
+		{ID: "middle", Added: ago(10 * day)},
+	}
+	added := BuildNewMusicBy(tracks, NewMusicByAdded, 10, 5)
+	released := BuildNewMusicBy(tracks, NewMusicByReleased, 10, 5)
+	if strings.Join(added.TrackIDs, ",") != strings.Join(released.TrackIDs, ",") {
+		t.Errorf("released order %v differs from added order %v on an undated library", released.TrackIDs, added.TrackIDs)
+	}
+	if released.TrackIDs[0] != "newest" {
+		t.Errorf("selected %v, want newest addition first", released.TrackIDs)
+	}
+}
+
+func date(y int, m time.Month, d int) time.Time {
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}

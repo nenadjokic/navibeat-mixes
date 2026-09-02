@@ -46,10 +46,10 @@ func New(call Caller, user string) *Client {
 func (c *Client) User() string { return c.user }
 
 type song struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Artist    string `json:"artist"`
-	Genre     string `json:"genre"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Genre  string `json:"genre"`
 	// OpenSubsonic's multi-value genre list. The legacy `genre` above carries
 	// only ONE, so a track tagged "Hip-Hop; Funk" reports Hip-Hop and nothing
 	// else, and every genre-shaped mix silently missed it. Servers that do not
@@ -101,9 +101,7 @@ type envelope struct {
 				ID string `json:"id"`
 			} `json:"album"`
 		} `json:"albumList2"`
-		Album struct {
-			Song []song `json:"song"`
-		} `json:"album"`
+		Album         album `json:"album"`
 		SearchResult3 struct {
 			Song []song `json:"song"`
 		} `json:"searchResult3"`
@@ -112,6 +110,30 @@ type envelope struct {
 		} `json:"playlists"`
 		Playlist Playlist `json:"playlist"`
 	} `json:"subsonic-response"`
+}
+
+// itemDate is OpenSubsonic's date object: any of the three parts may be
+// missing, and a wholly untagged album arrives as `{}`. Navidrome fills it
+// from a "YYYY-MM-DD", "YYYY-MM" or "YYYY" tag (server/subsonic/helpers.go,
+// toItemDate), so a year-only tag is {"year":2025} and nothing else.
+type itemDate struct {
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
+}
+
+// album is the part of a getAlbum answer the pool needs. The date fields are
+// album-level on purpose: a Subsonic song carries `year` and nothing finer,
+// while the AlbumID3 the same call already returns carries the full release
+// dates (helpers.go, buildOSAlbumID3), so reading them here costs no extra
+// round trip. Measured on a real 0.63.2: `year`, `created`, `releaseDate`
+// and `originalReleaseDate` are present on every album, the two date objects
+// empty when the library carries no such tags.
+type album struct {
+	Year                int      `json:"year"`
+	ReleaseDate         itemDate `json:"releaseDate"`
+	OriginalReleaseDate itemDate `json:"originalReleaseDate"`
+	Song                []song   `json:"song"`
 }
 
 // Playlist is the subset of a Subsonic playlist this plugin uses.
@@ -145,6 +167,27 @@ func (c *Client) do(endpoint string, params url.Values) (*envelope, error) {
 	return &env, nil
 }
 
+// CandidateOptions says how the pool is assembled. The zero value is exactly
+// what Candidates has always done.
+type CandidateOptions struct {
+	// AlbumPages is how many albums to pull per album list.
+	AlbumPages int
+	// ByReleaseDate adds a fourth album list, the albums released in Year and
+	// the two years before it, so a New Music mix ranked on release date has
+	// this year's records in its pool whatever day they were added. Without
+	// it the released order could only reorder the recently ADDED albums:
+	// measured on a real server, the six newest-added albums included 1984
+	// and 1991 releases, while releases from the previous year, added months
+	// earlier, were not in the pool at all.
+	ByReleaseDate bool
+	// Year is the current year, the top of that window.
+	Year int
+}
+
+// releaseWindowYears is how far back the release-date list reaches, counted
+// from Year inclusive: this year and the two before it.
+const releaseWindowYears = 2
+
 // Candidates gathers the pool the mixes are selected from: everything the user
 // starred, plus the tracks of their newest, most played and most recent albums.
 //
@@ -160,15 +203,41 @@ func (c *Client) do(endpoint string, params url.Values) (*envelope, error) {
 // `newest` is the only one of the three that answers on a library nobody has
 // played yet, which also makes it the honest source for New Music.
 func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
-	seen := map[string]bool{}
+	return c.CandidatesWith(CandidateOptions{AlbumPages: albumPages})
+}
+
+// CandidatesWith is Candidates with the pool options spelled out.
+func (c *Client) CandidatesWith(opts CandidateOptions) ([]mixes.Track, error) {
+	// index maps a track id to its position in out, so a later pass can
+	// refine a track that an earlier pass already added.
+	index := map[string]int{}
+	// precision remembers how exact each track's Released is, so a later
+	// album pass only ever makes it more exact and never less.
+	precision := map[string]int{}
 	var out []mixes.Track
 
-	add := func(songs []song) {
+	// add folds one list of songs into the pool. `al` is the album they came
+	// from, nil for getStarred2, which returns songs without their album.
+	//
+	// A song already in the pool is not added twice, but its release date may
+	// still be refined: getStarred2 runs first and carries only the song's
+	// `year`, so a starred track that also sits in a fetched album would
+	// otherwise keep 1 January while the album knows the day.
+	add := func(songs []song, al *album) {
 		for _, s := range songs {
-			if s.ID == "" || seen[s.ID] {
+			if s.ID == "" {
 				continue
 			}
-			seen[s.ID] = true
+			released, exact := releasedFrom(al, s)
+			if i, ok := index[s.ID]; ok {
+				if exact > precision[s.ID] {
+					out[i].Released = released
+					precision[s.ID] = exact
+				}
+				continue
+			}
+			index[s.ID] = len(out)
+			precision[s.ID] = exact
 			out = append(out, mixes.Track{
 				ID:         s.ID,
 				Title:      s.Title,
@@ -179,29 +248,29 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 				PlayCount:  s.PlayCount,
 				LastPlayed: parseTime(s.Played),
 				Added:      parseTime(s.Created),
+				Released:   released,
 				Starred:    s.Starred != "",
 			})
 		}
 	}
 
 	if env, err := c.do("getStarred2", url.Values{}); err == nil {
-		add(env.Response.Starred2.Song)
+		add(env.Response.Starred2.Song, nil)
 	} else {
 		return nil, err
 	}
 
-	// Album ids are deduplicated ACROSS the three lists, not just inside each
-	// one. The overlap is not marginal: on a server in daily use the same
-	// records are both the most played and the most recently played, so the
-	// old code spent a full getAlbum round trip on each of them twice. Paying
-	// that back is what buys the third list below at roughly the old cost.
+	// Album ids are deduplicated ACROSS the lists, not just inside each one.
+	// The overlap is not marginal: on a server in daily use the same records
+	// are both the most played and the most recently played, so the old code
+	// spent a full getAlbum round trip on each of them twice. Paying that back
+	// is what buys the third list below at roughly the old cost.
 	seenAlbum := map[string]bool{}
-	for _, listType := range []string{"newest", "frequent", "recent"} {
-		env, err := c.do("getAlbumList2", url.Values{
-			"type": {listType}, "size": {strconv.Itoa(albumPages)},
-		})
+	fetchList := func(params url.Values) error {
+		params.Set("size", strconv.Itoa(opts.AlbumPages))
+		env, err := c.do("getAlbumList2", params)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, al := range env.Response.AlbumList2.Album {
 			if al.ID == "" || seenAlbum[al.ID] {
@@ -213,11 +282,84 @@ func (c *Client) Candidates(albumPages int) ([]mixes.Track, error) {
 				// One unreadable album must not abort the whole run.
 				continue
 			}
-			add(detail.Response.Album.Song)
+			add(detail.Response.Album.Song, &detail.Response.Album)
+		}
+		return nil
+	}
+	for _, listType := range []string{"newest", "frequent", "recent"} {
+		if err := fetchList(url.Values{"type": {listType}}); err != nil {
+			return nil, err
+		}
+	}
+	// The release-date window, only when the released order asked for it: it
+	// costs up to AlbumPages more getAlbum calls, and nobody else uses it.
+	//
+	// fromYear ABOVE toYear is deliberate and is what makes the list come back
+	// newest first: Navidrome swaps the two and sets a descending order when
+	// they arrive that way round (server/subsonic/filter/filters.go,
+	// AlbumsByYear), sorted on the original date, then the release date.
+	if opts.ByReleaseDate && opts.Year > 0 {
+		if err := fetchList(url.Values{
+			"type":     {"byYear"},
+			"fromYear": {strconv.Itoa(opts.Year)},
+			"toYear":   {strconv.Itoa(opts.Year - releaseWindowYears)},
+		}); err != nil {
+			return nil, err
 		}
 	}
 
 	return out, nil
+}
+
+// Release date precision, for refining a track across passes. A higher value
+// is a more exact date.
+const (
+	releaseUnknown = iota
+	releaseYear
+	releaseMonth
+	releaseDay
+)
+
+// releasedFrom picks the release date for one song, and how exact it is.
+//
+// Precedence: the album's original release date, then its release date, then
+// the album's `year`, then the song's own `year`. Original first because that
+// is the order Navidrome itself ranks by, and because a 2015 remaster of a
+// 1975 record is not new music; with the historic tagging Navidrome maps
+// (ORIGINALDATE=1975, DATE=2015) it lands as year 1975, releaseDate 2015, and
+// the original wins. Anything before 1900 is treated as untagged, the same
+// floor the decade mixes use.
+func releasedFrom(al *album, s song) (time.Time, int) {
+	if al != nil {
+		for _, d := range []itemDate{al.OriginalReleaseDate, al.ReleaseDate} {
+			if d.Year >= 1900 {
+				return dateOf(d)
+			}
+		}
+		if al.Year >= 1900 {
+			return dateOf(itemDate{Year: al.Year})
+		}
+	}
+	if s.Year >= 1900 {
+		return dateOf(itemDate{Year: s.Year})
+	}
+	return time.Time{}, releaseUnknown
+}
+
+// dateOf turns a possibly partial date into a time, with the missing parts
+// set to 1, and reports how many parts were present.
+func dateOf(d itemDate) (time.Time, int) {
+	exact := releaseYear
+	month, day := 1, 1
+	if d.Month >= 1 && d.Month <= 12 {
+		month = d.Month
+		exact = releaseMonth
+		if d.Day >= 1 && d.Day <= 31 {
+			day = d.Day
+			exact = releaseDay
+		}
+	}
+	return time.Date(d.Year, time.Month(month), day, 0, 0, 0, 0, time.UTC), exact
 }
 
 // Playlists lists the playlists visible to this user.

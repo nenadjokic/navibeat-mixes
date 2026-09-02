@@ -88,6 +88,13 @@ type Config struct {
 	// server still gets a varied shelf.
 	ButtonIcons  map[string]string
 	ButtonColors map[string]string
+	// NewMusicOrder is what "new" means to the New Music mix: "added" ranks
+	// on the date the file reached the server, "released" on the release
+	// date in the tags. Steven O'Neil asked which one it was, on a library
+	// where a record from 1984 ripped yesterday is the newest file and the
+	// oldest music. Default "added", which is the only order there was
+	// before 0.9.8, so an upgrade changes nothing for anybody.
+	NewMusicOrder string
 }
 
 // DefaultButtonIcons is the built-in icon per mix family, and the reason a
@@ -210,9 +217,10 @@ func Defaults() Config {
 		},
 		// The default is the artwork every existing install already sees, so
 		// upgrading the plugin never changes how anybody's shelf looks.
-		MixStyle:     "cover",
-		ButtonIcons:  map[string]string{},
-		ButtonColors: map[string]string{},
+		MixStyle:      "cover",
+		ButtonIcons:   map[string]string{},
+		ButtonColors:  map[string]string{},
+		NewMusicOrder: "added",
 	}
 }
 
@@ -388,6 +396,15 @@ func Load(get Getter) Config {
 		switch v {
 		case "cover", "button", "mosaic":
 			c.MixStyle = v
+		}
+	}
+	// What New Music ranks on. Same rule as mixStyle: a value that is not one
+	// of the two words is ignored, so a typo keeps today's order rather than
+	// producing a mix ranked on nothing.
+	if v := strings.ToLower(strings.TrimSpace(get("newMusicOrder"))); v != "" {
+		switch v {
+		case "added", "released":
+			c.NewMusicOrder = v
 		}
 	}
 	// Per-family button overrides, read through the same three shapes as the

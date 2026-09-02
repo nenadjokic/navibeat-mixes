@@ -77,8 +77,14 @@ type Track struct {
 	// Added is when the file entered the library, from Subsonic's `created`.
 	// Zero when the server did not send one, which callers read as "unknown"
 	// and fall back from rather than treating as very old.
-	Added   time.Time
-	Starred bool
+	Added time.Time
+	// Released is when the music itself came out, from the release date tags
+	// the server carries on the album (OpenSubsonic `originalReleaseDate`,
+	// then `releaseDate`) or, failing those, the plain `year`. A year-only
+	// date is 1 January of that year. Zero when nothing was tagged, which the
+	// released order reads as "unknown" and sorts behind every known date.
+	Released time.Time
+	Starred  bool
 }
 
 // AllGenres is every genre this track carries, trimmed and without blanks.

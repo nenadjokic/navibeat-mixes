@@ -206,7 +206,15 @@ func saveLedger(l *resume.Ledger) {
 func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, budget *resume.Budget) (bool, error) {
 	client := library.New(host.SubsonicAPICall, username)
 
-	tracks, err := client.Candidates(albumPages)
+	// The release-date list is fetched only when New Music is enabled and set
+	// to rank on it: it is the one consumer, and it costs up to albumPages
+	// more getAlbum calls per user per run.
+	byRelease := cfg.MixEnabled("newmusic") && cfg.NewMusicOrder == string(mixes.NewMusicByReleased)
+	tracks, err := client.CandidatesWith(library.CandidateOptions{
+		AlbumPages:    albumPages,
+		ByReleaseDate: byRelease,
+		Year:          time.Now().Year(),
+	})
 	if err != nil {
 		return true, err
 	}
@@ -253,9 +261,14 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			MinUseful:    minMixSize,
 		}))
 
-	add("newmusic", "New Music", "newmusic",
-		"NaviBeat Mixes: the newest additions to your library.", "newmusic",
-		mixes.BuildNewMusic(tracks, cfg.MixSize, cfg.MaxPerArtist))
+	// The name and the slot never change with the order; only the description
+	// says which "new" this is, and the description is free to change.
+	newMusicHuman := "NaviBeat Mixes: the newest additions to your library."
+	if byRelease {
+		newMusicHuman = "NaviBeat Mixes: the newest releases in your library."
+	}
+	add("newmusic", "New Music", "newmusic", newMusicHuman, "newmusic",
+		mixes.BuildNewMusicBy(tracks, mixes.NewMusicOrder(cfg.NewMusicOrder), cfg.MixSize, cfg.MaxPerArtist))
 
 	add("loved", "Your Loved Songs", "loved",
 		"NaviBeat Mixes: everything you starred, oldest favourite first.", "loved",

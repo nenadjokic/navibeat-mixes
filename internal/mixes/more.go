@@ -38,6 +38,18 @@ func NumberedSlot(base Slot, n int) string {
 	return string(base) + "-" + strconv.Itoa(n)
 }
 
+// NewMusicOrder is what "new" means to the New Music mix.
+type NewMusicOrder string
+
+const (
+	// NewMusicByAdded ranks on the date the file reached the server. The
+	// default, and the only order there was before 0.9.8.
+	NewMusicByAdded NewMusicOrder = "added"
+	// NewMusicByReleased ranks on the release date in the tags, newest first,
+	// and falls back to the added date only for tracks with no date at all.
+	NewMusicByReleased NewMusicOrder = "released"
+)
+
 // BuildNewMusic is the newest additions to the library. It needs no history at
 // all, which makes it one of the few mixes that is genuinely good on install
 // day, so it is worth having even on a server with no listening data.
@@ -50,13 +62,44 @@ func NumberedSlot(base Slot, n int) string {
 // whatever the user had starred and called it new.
 //
 // Position is still the tie-break, for a server that sends no date at all.
+//
+// Kept with its original signature and its original order so every caller,
+// every test and every pinned playlist behaves exactly as before 0.9.8; the
+// release-date order lives in BuildNewMusicBy.
 func BuildNewMusic(tracks []Track, size, maxPerArtist int) Selection {
+	return BuildNewMusicBy(tracks, NewMusicByAdded, size, maxPerArtist)
+}
+
+// BuildNewMusicBy is BuildNewMusic with a choice of what "new" means.
+//
+// Steven O'Neil asked whether New Music was the release date or the date the
+// file was added, because on a library that is still being ripped the two
+// disagree completely: a 1984 record added yesterday is the newest thing on
+// the server and the oldest thing in the mix. Both readings are legitimate,
+// so it is a setting, and the default is the one every existing install has.
+//
+// The released order, in this sequence:
+//
+//  1. Played tracks behind unplayed ones (unchanged, Sly777's rule above).
+//  2. A known release date before an unknown one.
+//  3. Newer release date first.
+//  4. Equal release date, then newer ADDED date first, so a library with
+//     year-only tags still moves with what arrived this week.
+//  5. Position in the pool.
+//
+// A year-only date is 1 January of that year, so within one year an album
+// tagged with a full date outranks one tagged with only the year. That is a
+// property of the tags, and it is documented rather than hidden. A library
+// with no dates at all lands entirely in the unknown group and comes out in
+// exactly the added order, so this mode can never do worse than the default.
+func BuildNewMusicBy(tracks []Track, order NewMusicOrder, size, maxPerArtist int) Selection {
 	pos := make(map[string]int, len(tracks))
 	for i, t := range tracks {
 		pos[t.ID] = i
 	}
 	ranked := make([]Track, len(tracks))
 	copy(ranked, tracks)
+	byReleased := order == NewMusicByReleased
 	sort.Slice(ranked, func(i, j int) bool {
 		a, b := ranked[i], ranked[j]
 		// Sly777 (issue #1): "on new music playlist, there were many songs I
@@ -68,6 +111,14 @@ func BuildNewMusic(tracks []Track, size, maxPerArtist int) Selection {
 		// the failure the Rediscover builder above already learned to avoid.
 		if (a.PlayCount > 0) != (b.PlayCount > 0) {
 			return b.PlayCount > 0
+		}
+		if byReleased {
+			if a.Released.IsZero() != b.Released.IsZero() {
+				return b.Released.IsZero()
+			}
+			if !a.Released.Equal(b.Released) {
+				return a.Released.After(b.Released)
+			}
 		}
 		// A missing date sorts behind every known one rather than ahead of
 		// them: the zero time is "the server did not say", not 1970.

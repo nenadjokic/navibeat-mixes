@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -151,6 +151,16 @@
           "type": "boolean",
           "title": "New Music",
           "default": true
+        },
+        "newMusicOrder": {
+          "type": "string",
+          "title": "New Music: what counts as new",
+          "enum": [
+            "added",
+            "released"
+          ],
+          "default": "added",
+          "description": "added ranks by when the file reached your server; released ranks by the release date in your tags, newest first, and uses the added date only for tracks with no date at all."
         },
         "enableLoved": {
           "type": "boolean",
@@ -696,6 +706,10 @@
             {
               "type": "Control",
               "scope": "#/properties/enableNewMusic"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/newMusicOrder"
             },
             {
               "type": "Control",

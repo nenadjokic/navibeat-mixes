@@ -328,3 +328,28 @@ func TestAnUnconfiguredServerStillGetsTheBuiltInButtons(t *testing.T) {
 		t.Errorf("PlaylistName(morning) = %q", c.PlaylistName("morning"))
 	}
 }
+
+// New Music ranks on the added date unless the owner says otherwise, and the
+// key is camel case with no dot in it, the shape 0.9.7 settled on.
+func TestNewMusicOrderDefaultsToAddedAndReadsReleased(t *testing.T) {
+	if c := Load(getterFrom(nil)); c.NewMusicOrder != "added" {
+		t.Errorf("default order is %q, want added", c.NewMusicOrder)
+	}
+	if c := Load(getterFrom(map[string]string{"newMusicOrder": "released"})); c.NewMusicOrder != "released" {
+		t.Errorf("released was read as %q", c.NewMusicOrder)
+	}
+	// Case and whitespace are what a person types, not what the enum says.
+	if c := Load(getterFrom(map[string]string{"newMusicOrder": " Released "})); c.NewMusicOrder != "released" {
+		t.Errorf("' Released ' was read as %q", c.NewMusicOrder)
+	}
+}
+
+// A value that is neither word keeps today's order, so a typo can never leave
+// New Music ranked on nothing.
+func TestNewMusicOrderIgnoresAnUnknownValue(t *testing.T) {
+	for _, bad := range []string{"release", "newest", "true", "0"} {
+		if c := Load(getterFrom(map[string]string{"newMusicOrder": bad})); c.NewMusicOrder != "added" {
+			t.Errorf("%q was accepted as %q", bad, c.NewMusicOrder)
+		}
+	}
+}
