@@ -125,10 +125,15 @@ func (p *plugin) OnInit() error {
 	// installed or upgraded the plugin is owed a full run now, so the day's
 	// ledger is forgotten before it starts.
 	saveLedger(resume.NewLedger(resume.DayOf(time.Now())))
-	id, err := resume.Continue(hostScheduler{}, hostStore{}, initDelaySec, "generate")
-	if err != nil {
+	// No running id here: OnInit is not a scheduler callback, so the successor
+	// is numbered from the note alone, which after CancelStale above is empty.
+	id, err := resume.Continue(hostScheduler{}, hostStore{}, initDelaySec, "generate", "")
+	if err != nil && id == "" {
 		logf("could not schedule the first generation: %v", err)
 		return nil
+	}
+	if err != nil {
+		logf("the first generation %s is scheduled but could not be noted: %v", id, err)
 	}
 	logf("first generation scheduled in %ds as %s, so the load stays inside the host's deadline", initDelaySec, id)
 	return nil
@@ -150,14 +155,25 @@ func (hostStore) Get(key string) ([]byte, bool, error) { return host.KVStoreGet(
 func (hostStore) Set(key string, value []byte) error   { return host.KVStoreSet(key, value) }
 func (hostStore) Delete(key string) error              { return host.KVStoreDelete(key) }
 
+// runningScheduleID is the id of the scheduler callback currently executing,
+// set by OnCallback and empty everywhere else. The plugin is one WASM instance
+// serving one call at a time, so a package variable is the whole of it.
+var runningScheduleID string
+
 // scheduleContinuation asks the host for one more generate call, and says
 // what the budget looked like when it gave up, so the log can tell a chain
 // that is making progress from a server that is simply too slow.
 func scheduleContinuation(budget *resume.Budget, username string) {
-	id, err := resume.Continue(hostScheduler{}, hostStore{}, continueDelaySec, "generate")
-	if err != nil {
+	id, err := resume.Continue(hostScheduler{}, hostStore{}, continueDelaySec, "generate", runningScheduleID)
+	if err != nil && id == "" {
 		logf("could not schedule the continuation: %v", err)
 		return
+	}
+	if err != nil {
+		// #501871: the schedule IS registered, only the note about it failed.
+		// The chain continues, and the next successor is numbered from the id
+		// that is running rather than from the note, so it cannot collide.
+		logf("the continuation %s is scheduled but could not be noted: %v", id, err)
 	}
 	logf("budget of %v spent after %v (%d steps, the last took %v) with %s unfinished, continuing in %ds as %s",
 		budget.Limit(), budget.Elapsed().Round(time.Millisecond), budget.Steps(),
@@ -169,6 +185,12 @@ func scheduleContinuation(budget *resume.Budget, username string) {
 // stop the mixes from being refreshed, which is the whole reason the design
 // keeps these two apart.
 func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
+	// #501871: remember which schedule id is running, so a continuation asked
+	// for during this call is never numbered onto the id the host still holds
+	// in its map. Cleared on the way out: outside a callback there is no
+	// running id, and a stale one would misnumber the control path.
+	runningScheduleID = req.ScheduleID
+	defer func() { runningScheduleID = "" }()
 	if req.Payload == "control" {
 		return pollControl()
 	}

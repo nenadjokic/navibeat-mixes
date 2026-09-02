@@ -14,6 +14,9 @@ type fakeHost struct {
 	schedules map[string]string // id -> payload
 	kv        map[string][]byte
 	cancelled []string
+	// #501871: makes the kvstore write fail, the way a full or locked
+	// store does, so the chain can be tested through a lost note.
+	failSet bool
 }
 
 func newFakeHost() *fakeHost {
@@ -51,8 +54,14 @@ func (f *fakeHost) Get(key string) ([]byte, bool, error) {
 	v, ok := f.kv[key]
 	return v, ok, nil
 }
-func (f *fakeHost) Set(key string, value []byte) error { f.kv[key] = value; return nil }
-func (f *fakeHost) Delete(key string) error            { delete(f.kv, key); return nil }
+func (f *fakeHost) Set(key string, value []byte) error {
+	if f.failSet {
+		return errors.New("kvstore is unavailable")
+	}
+	f.kv[key] = value
+	return nil
+}
+func (f *fakeHost) Delete(key string) error { delete(f.kv, key); return nil }
 
 // THE 2026-08-31 CHAIN BREAK. A continuation that needs another continuation
 // scheduled it under its own id while it was still registered, and the host
@@ -60,7 +69,7 @@ func (f *fakeHost) Delete(key string) error            { delete(f.kv, key); retu
 func TestContinueChainsFromInsideARunningContinuation(t *testing.T) {
 	h := newFakeHost()
 
-	first, err := Continue(h, h, 5, "generate")
+	first, err := Continue(h, h, 5, "generate", "")
 	if err != nil {
 		t.Fatalf("first continuation: %v", err)
 	}
@@ -70,7 +79,7 @@ func TestContinueChainsFromInsideARunningContinuation(t *testing.T) {
 
 	var second, third string
 	h.Fire(first, func() {
-		second, err = Continue(h, h, 5, "generate")
+		second, err = Continue(h, h, 5, "generate", "")
 		if err != nil {
 			t.Fatalf("scheduling from inside the first continuation: %v", err)
 		}
@@ -83,7 +92,7 @@ func TestContinueChainsFromInsideARunningContinuation(t *testing.T) {
 	}
 
 	h.Fire(second, func() {
-		third, err = Continue(h, h, 5, "generate")
+		third, err = Continue(h, h, 5, "generate", "")
 		if err != nil {
 			t.Fatalf("scheduling from inside the second continuation: %v", err)
 		}
@@ -104,8 +113,8 @@ func TestContinueChainsFromInsideARunningContinuation(t *testing.T) {
 // never work the same ledger at once.
 func TestContinueCancelsAPendingPredecessor(t *testing.T) {
 	h := newFakeHost()
-	first, _ := Continue(h, h, 5, "generate")
-	second, err := Continue(h, h, 5, "generate")
+	first, _ := Continue(h, h, 5, "generate", "")
+	second, err := Continue(h, h, 5, "generate", "")
 	if err != nil {
 		t.Fatalf("second continuation: %v", err)
 	}
@@ -136,7 +145,7 @@ func TestCancelStaleForgetsWhatTheHostAlreadyDropped(t *testing.T) {
 	if got := CancelStale(h, h); got != "" {
 		t.Fatalf("a second CancelStale found %q", got)
 	}
-	next, err := Continue(h, h, 5, "generate")
+	next, err := Continue(h, h, 5, "generate", "")
 	if err != nil || next != ContinuePrefix+"-1" {
 		t.Fatalf("after a clean start Continue = %q, %v", next, err)
 	}
@@ -146,7 +155,7 @@ func TestCancelStaleForgetsWhatTheHostAlreadyDropped(t *testing.T) {
 func TestContinueIgnoresGarbageInTheStore(t *testing.T) {
 	h := newFakeHost()
 	h.kv[ContinueKey] = []byte("navibeat-mixes-continue")
-	next, err := Continue(h, h, 5, "generate")
+	next, err := Continue(h, h, 5, "generate", "")
 	if err != nil || next != ContinuePrefix+"-1" {
 		t.Fatalf("Continue = %q, %v", next, err)
 	}
@@ -160,10 +169,88 @@ func TestContinueIgnoresGarbageInTheStore(t *testing.T) {
 func TestContinueReportsAHostRefusal(t *testing.T) {
 	h := newFakeHost()
 	h.schedules[ContinuePrefix+"-1"] = "generate" // registered by someone the store does not know about
-	if _, err := Continue(h, h, 5, "generate"); err == nil {
+	if _, err := Continue(h, h, 5, "generate", ""); err == nil {
 		t.Fatal("a refused schedule must be an error")
 	}
 	if _, ok := h.kv[ContinueKey]; ok {
 		t.Fatal("a refused schedule must not be remembered as pending")
+	}
+}
+
+// #501871. THE NOTE IS WRITTEN AFTER THE SCHEDULE, SO A FAILED WRITE USED TO
+// END THE CHAIN. The store stayed one number behind while the schedule under
+// the new number was live, the next continuation computed that same number,
+// and the host refused it because the running id was still in its map. The
+// successor is now numbered from the running id as well as from the note.
+func TestContinueChainsThroughAFailedStoreWrite(t *testing.T) {
+	h := newFakeHost()
+	h.failSet = true
+
+	first, err := Continue(h, h, 5, "generate", "")
+	if first != ContinuePrefix+"-1" {
+		t.Fatalf("first id = %q", first)
+	}
+	if err == nil {
+		t.Fatal("a failed note must still be reported to the caller")
+	}
+	if _, ok := h.kv[ContinueKey]; ok {
+		t.Fatal("the note was not supposed to be written")
+	}
+
+	// The first continuation now runs. The store knows nothing, so only the
+	// running id can tell Continue which number is taken. The write still
+	// fails here, which is the harder half: the chain must hold even when the
+	// store never comes back.
+	var second string
+	h.Fire(first, func() { second, err = Continue(h, h, 5, "generate", first) })
+	if second != ContinuePrefix+"-2" {
+		t.Fatalf("second id = %q, want %s-2", second, ContinuePrefix)
+	}
+	if _, live := h.schedules[second]; !live {
+		t.Fatalf("%s was not registered with the host", second)
+	}
+	if err == nil {
+		t.Fatal("the second failed note must be reported too")
+	}
+
+	// And once the store comes back, the chain keeps counting from the id that
+	// is running rather than from a note that never got written.
+	h.failSet = false
+	var third string
+	h.Fire(second, func() { third, err = Continue(h, h, 5, "generate", second) })
+	if err != nil {
+		t.Fatalf("third continuation: %v", err)
+	}
+	if third != ContinuePrefix+"-3" {
+		t.Fatalf("third id = %q, want %s-3", third, ContinuePrefix)
+	}
+}
+
+// The id we are running under is the host's to delete, so Continue must not
+// cancel it: cancelling would race the cleanup that runs after the callback.
+func TestContinueDoesNotCancelTheIdItIsRunningUnder(t *testing.T) {
+	h := newFakeHost()
+	first, _ := Continue(h, h, 5, "generate", "")
+	var err error
+	h.Fire(first, func() {
+		_, err = Continue(h, h, 5, "generate", first)
+	})
+	if err != nil {
+		t.Fatalf("continuation from inside %s: %v", first, err)
+	}
+	for _, id := range h.cancelled {
+		if id == first {
+			t.Fatalf("cancelled %s while it was the running callback", first)
+		}
+	}
+}
+
+// A running id that is not one of ours (the daily schedule, an auto-generated
+// UUID) contributes no number and changes nothing.
+func TestContinueIgnoresARunningIdThatIsNotAContinuation(t *testing.T) {
+	h := newFakeHost()
+	next, err := Continue(h, h, 5, "generate", "navibeat-mixes-daily")
+	if err != nil || next != ContinuePrefix+"-1" {
+		t.Fatalf("Continue = %q, %v", next, err)
 	}
 }

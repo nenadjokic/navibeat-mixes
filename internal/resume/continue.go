@@ -53,9 +53,28 @@ const ContinuePrefix = "navibeat-mixes-continue"
 // the previous continuation is cancelled (harmless when it is the one running
 // right now, or when the host has already forgotten it), and the new one is
 // registered under an id the cleanup will not touch.
-func Continue(s Scheduler, st Store, delay int32, payload string) (string, error) {
+// `runningID` is the schedule id of the callback that is asking, straight
+// from the host, or "" when the caller is not inside one (the control path,
+// or a test).
+//
+// ⛔ WHY THE RUNNING ID IS A PARAMETER (#501871, found by the second reader of
+// 0.9.9). The number used to come from the store alone, and the store is
+// written AFTER the schedule is registered, so a kvstore Set that fails leaves
+// the note one number behind while the schedule under the new number is live.
+// The next continuation then computed that same number again, and the host
+// refused it with "already exists" because the running id was still in its
+// map, so one failed write ended the chain. Deriving the successor from BOTH
+// the note and the id that is running makes the collision unreachable: the
+// running number is known first-hand, whatever the store says.
+func Continue(s Scheduler, st Store, delay int32, payload, runningID string) (string, error) {
 	previous, n := pending(st)
-	if previous != "" {
+	if r := numberOf(runningID); r > n {
+		n = r
+	}
+	// The id we are running under is never cancelled: the host deletes it
+	// itself once this callback returns, and cancelling it here would only
+	// race that cleanup.
+	if previous != "" && previous != runningID {
 		// A pending one is superseded, so two continuations never race for
 		// the same ledger. "not found" is the usual answer here (the host
 		// forgets a one-time schedule once it has fired) and is not an error.
@@ -89,6 +108,19 @@ func CancelStale(s Scheduler, st Store) string {
 	_ = s.CancelSchedule(previous)
 	_ = st.Delete(ContinueKey)
 	return previous
+}
+
+// numberOf reads the trailing number of a continuation id, or 0 for anything
+// that is not one: the daily schedule's id, an empty string, a corrupt value.
+func numberOf(id string) int {
+	if !strings.HasPrefix(id, ContinuePrefix+"-") {
+		return 0
+	}
+	n, err := strconv.Atoi(id[len(ContinuePrefix)+1:])
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // pending reads the remembered continuation id and its number. A value that
