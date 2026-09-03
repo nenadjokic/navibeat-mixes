@@ -486,6 +486,56 @@ func TopDecades(tracks []Track, n int) []int {
 	return out
 }
 
+// TopDecadesOwning is TopDecades with the floor artists and genres already
+// have: a decade is ranked only when the pool holds at least minOwned tracks
+// from it that a mix could actually take under the per-artist cap.
+//
+// Why it exists (#501721, 2026-09-04). TopDecades ranked by plays alone, so a
+// decade a listener plays hard but owns little of (a few 1970s singles on
+// repeat) took one of the two weekly rotation slots and then came out under
+// minMixSize in BuildForDecade, where writeNamed leaves it unwritten. The
+// week showed one decade playlist instead of two, and the missing one had no
+// explanation anywhere. Artist Radio (issue #4) and Genre Radio were given
+// this floor for exactly that reason; decades were the one ranking without it.
+//
+// Ranking is unchanged for every eligible decade: TopDecades keeps its key so
+// the order a listener already sees does not move.
+func TopDecadesOwning(tracks []Track, n, minOwned, maxPerArtist int) []int {
+	plays := map[int]int{}
+	byArtist := map[int]map[string]int{}
+	for _, t := range tracks {
+		if t.Year < 1900 {
+			continue
+		}
+		d := Decade(t.Year)
+		plays[d] += t.PlayCount + 1
+		if byArtist[d] == nil {
+			byArtist[d] = map[string]int{}
+		}
+		// Same bucket takeIDsCapped uses: lower-cased, not trimmed.
+		byArtist[d][strings.ToLower(t.Artist)]++
+	}
+	type dp struct{ d, n int }
+	all := make([]dp, 0, len(plays))
+	for d, c := range plays {
+		if genreCapacity(byArtist[d], maxPerArtist) < minOwned {
+			continue
+		}
+		all = append(all, dp{d, c})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].n != all[j].n {
+			return all[i].n > all[j].n
+		}
+		return all[i].d > all[j].d
+	})
+	out := make([]int, 0, n)
+	for i := 0; i < len(all) && i < n; i++ {
+		out = append(out, all[i].d)
+	}
+	return out
+}
+
 // BuildForDecade is one decade mix.
 func BuildForDecade(tracks []Track, decade, size, maxPerArtist int) Selection {
 	scored := make([]scoredTrack, 0, len(tracks))

@@ -478,7 +478,9 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			"NaviBeat Mixes: built around "+artists[i]+" and what sits near it. Rotates weekly.", "dailymix",
 			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, cfg.MaxPerArtist))
 	}
-	for _, d := range mixes.Rotate(mixes.TopDecades(tracks, 6), week, 2) {
+	// Same floor and same reason as the genre and artist pools: a decade that
+	// cannot fill a mix must not take a rotation slot it will then leave empty.
+	for _, d := range mixes.Rotate(mixes.TopDecadesOwning(tracks, 6, minMixSize, cfg.MaxPerArtist), week, 2) {
 		label := strconv.Itoa(d) + "s"
 		add("decade", label, "decade-"+strconv.Itoa(d),
 			"NaviBeat Mixes: your "+label+", ranked by what you actually play. Rotates weekly.", "decade",

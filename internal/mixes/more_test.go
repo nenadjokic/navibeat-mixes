@@ -118,6 +118,47 @@ func TestDecadeMixOnlyTakesThatDecade(t *testing.T) {
 	}
 }
 
+// #501721: a decade played hard but owned thinly used to win a rotation slot
+// on plays alone and then come out under minMixSize, so the week showed one
+// decade playlist instead of two. The floor ranks only decades a mix can fill.
+func TestTopDecadesOwningSkipsADecadeThatCannotFillAMix(t *testing.T) {
+	var tracks []Track
+	// Three 1970s singles on heavy rotation: 303 points of plays, 3 tracks.
+	for i := 0; i < 3; i++ {
+		tracks = append(tracks, Track{ID: "70s" + string(rune('a'+i)), Artist: "Artist" + string(rune('a'+i)), Year: 1975, PlayCount: 100})
+	}
+	// Twelve 1990s tracks from six artists, played once each: 24 points.
+	for i := 0; i < 12; i++ {
+		tracks = append(tracks, Track{ID: "90s" + string(rune('a'+i)), Artist: "Band" + string(rune('a'+i%6)), Year: 1994, PlayCount: 1})
+	}
+	if got := TopDecades(tracks, 6); len(got) != 2 || got[0] != 1970 {
+		t.Fatalf("TopDecades must keep ranking by plays, got %v", got)
+	}
+	got := TopDecadesOwning(tracks, 6, 10, 3)
+	if len(got) != 1 || got[0] != 1990 {
+		t.Errorf("TopDecadesOwning(minOwned 10) = %v, want only 1990: the 1970s hold 3 tracks and cannot fill a mix", got)
+	}
+}
+
+// The floor counts what the per-artist cap would let a mix take, not raw
+// tracks: twelve 1980s tracks by ONE artist are three under a cap of three.
+func TestTopDecadesOwningAppliesThePerArtistCap(t *testing.T) {
+	var tracks []Track
+	for i := 0; i < 12; i++ {
+		tracks = append(tracks, Track{ID: "80s" + string(rune('a'+i)), Artist: "Solo", Year: 1985, PlayCount: 5})
+	}
+	for i := 0; i < 12; i++ {
+		tracks = append(tracks, Track{ID: "00s" + string(rune('a'+i)), Artist: "Band" + string(rune('a'+i%6)), Year: 2004, PlayCount: 0})
+	}
+	got := TopDecadesOwning(tracks, 6, 10, 3)
+	if len(got) != 1 || got[0] != 2000 {
+		t.Errorf("got %v, want only 2000: the 1980s are one artist capped at 3", got)
+	}
+	if got := TopDecadesOwning(tracks, 6, 10, 0); len(got) != 2 || got[0] != 1980 {
+		t.Errorf("with no cap both decades qualify and plays rank first, got %v", got)
+	}
+}
+
 // Three Daily Mixes anchored on the same artist would be one mix printed three
 // times, which is what makes the feature feel fake.
 func TestDailyMixesAreAnchoredOnDifferentArtists(t *testing.T) {
