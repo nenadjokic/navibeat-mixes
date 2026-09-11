@@ -8,13 +8,18 @@
   <a href="https://navibeat.app"><b>navibeat.app</b></a>
 </p>
 
-[![Downloads](https://img.shields.io/github/downloads/nenadjokic/navibeat-mixes/total?label=downloads&color=F47B20&style=flat-square)](../../releases)
-[![Latest release](https://img.shields.io/github/v/release/nenadjokic/navibeat-mixes?include_prereleases&label=release&color=F47B20&style=flat-square)](../../releases/latest)
-[![Navidrome](https://img.shields.io/badge/Navidrome-0.63.1%2B-F47B20?style=flat-square)](https://www.navidrome.org)
-[![Licence](https://img.shields.io/badge/licence-GPL--3.0-F47B20?style=flat-square)](LICENSE)
+<p align="center">
+  <a href="../../releases"><img src="https://img.shields.io/github/downloads/nenadjokic/navibeat-mixes/total?label=downloads&color=F47B20&style=flat-square" alt="Downloads"></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/nenadjokic/navibeat-mixes?include_prereleases&label=release&color=F47B20&style=flat-square" alt="Latest release"></a>
+  <a href="https://www.navidrome.org"><img src="https://img.shields.io/badge/Navidrome-0.63.1%2B-F47B20?style=flat-square" alt="Navidrome 0.63.1+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPL--3.0-F47B20?style=flat-square" alt="Licence GPL-3.0"></a>
+</p>
 
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/nenadjokic)
-[![PayPal](https://img.shields.io/badge/PayPal-0070BA?style=flat-square&logo=paypal&logoColor=white)](https://paypal.me/nenadjokicRS)
+<p align="center">
+  <a href="https://buymeacoffee.com/nenadjokic"><img height="34" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
+  &nbsp;
+  <a href="https://paypal.me/nenadjokicRS"><img height="34" src="https://img.shields.io/badge/PayPal-0070BA?style=flat-square&logo=paypal&logoColor=white" alt="PayPal"></a>
+</p>
 
 A Navidrome plugin that builds playlists from how you actually listen: a mix
 for each part of the day, and a Rediscover mix of music you loved and have not
