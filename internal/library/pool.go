@@ -257,6 +257,14 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 		}
 	}
 
+	if !p.Starred && opts.SkipStarred {
+		// Marked done rather than left pending: a pending phase would be
+		// retried by the next call, which is the loop this is here to break.
+		// Said out loud, because a mix built without it is thinner and the
+		// person reading the log deserves to know which run that was.
+		logf("skipping the starred list this run: the previous calls were killed by the host before they could return")
+		p.Starred = true
+	}
 	if !p.Starred {
 		env, err := c.do("getStarred2", url.Values{})
 		if err != nil {

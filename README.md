@@ -256,9 +256,30 @@ is scheduled a few seconds after the load rather than run inside it. The log
 says what happened at each hand-over ("budget of 15s spent after 13.2s ...
 continuing in 5s as navibeat-mixes-continue-2"). A chain that is still
 moving is never cut, however many calls it takes; one that gets no further
-three calls in a row is given up for the day, and the log says so once. Lower
-`budgetSeconds` if the log still shows "context deadline exceeded"; it cannot
-go below 3 or above 25.
+three calls in a row is given up for the day, and the log says so once.
+
+**If the log still shows "context deadline exceeded", lowering `budgetSeconds`
+will not help, and here is why.** The budget is read between units of work,
+never during one, and a request already on its way to the server cannot be
+called back from inside the plugin. So when a single Subsonic call takes
+longer than the 30 seconds Navidrome allows, the plugin is killed before it
+ever reaches the line that would look at your setting, and 3 seconds and 25
+seconds die at exactly the same moment. This is what a Raspberry Pi 3B did on
+2026-09-13, freshly upgraded and still indexing.
+
+The plugin handles that case itself, from 0.9.12. It writes a mark into its
+own store before the work and clears it when the call returns, so a call that
+finds the mark still there knows the previous one was killed. Each kill in a
+row takes a smaller bite: a quarter of the albums per list page, then a
+twentieth, then the same without the one call that cannot be made smaller
+(`getStarred2` takes no size parameter, so the only way to ask for less of it
+is not to ask). A bite that survives is remembered for the rest of the day, so
+the run does not go back to the big one and get killed again. If even the
+smallest bite is killed, the plugin says so in one line and stops asking for
+continuations until the next daily run, rather than adding load to a machine
+that has already shown it cannot serve the call. `budgetSeconds` still cannot
+go below 3 or above 25, and on a machine like that it is not the knob that
+matters.
 
 ### Why the genre threshold exists
 

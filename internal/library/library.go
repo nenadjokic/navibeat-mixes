@@ -182,6 +182,14 @@ type CandidateOptions struct {
 	ByReleaseDate bool
 	// Year is the current year, the top of that window.
 	Year int
+	// SkipStarred folds getStarred2 out of the run and marks that phase done.
+	// It is the last thing a killed run drops before giving up (#502323):
+	// getStarred2 takes no size parameter in the Subsonic API, so it is the
+	// one call on this path that cannot be made smaller by asking
+	// differently. The cost is coverage rather than correctness, since every
+	// album fetch carries each track's starred flag too, so a starred track
+	// whose album is in one of the lists is still in the pool.
+	SkipStarred bool
 }
 
 // releaseWindowYears is how far back the release-date list reaches, counted
@@ -323,7 +331,7 @@ func (c *Client) EnsurePlaylist(name string) (string, error) {
 		// people's mixes, this call failing is the first suspect and there was
 		// nothing written down to confirm or clear it.
 		if Logf != nil {
-			Logf("could not make %s private: %v", name, err)
+			logf("could not make %s private: %v", name, err)
 		}
 	}
 	return id, nil
@@ -379,6 +387,16 @@ func FindControl(playlists []Playlist, name, owner string) *Playlist {
 // A function variable rather than an import because this package is kept free
 // of the plugin SDK so its tests run as ordinary Go.
 var Logf func(format string, args ...any)
+
+// logf is Logf with the nil check that every caller would otherwise have to
+// repeat and one of them forgot. The package's own tests never set Logf, so
+// an unguarded call turns a warning into a panic in exactly the code path a
+// test was written to cover.
+func logf(format string, args ...any) {
+	if Logf != nil {
+		Logf(format, args...)
+	}
+}
 
 // ReplaceTracks sets a playlist's contents to exactly the given ids.
 //

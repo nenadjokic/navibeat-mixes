@@ -125,6 +125,13 @@ func (p *plugin) OnInit() error {
 	// installed or upgraded the plugin is owed a full run now, so the day's
 	// ledger is forgotten before it starts.
 	saveLedger(resume.NewLedger(resume.DayOf(time.Now())))
+	// And so is the kill count, along with the bite the last instance settled
+	// on. A mark left by the instance that was just unloaded belongs to a
+	// chain the host has already forgotten, and starting the first run after
+	// an upgrade under yesterday's punishment would hide whether the upgrade
+	// is what helped.
+	resume.ClearWatch(hostStore{})
+	resume.ClearPace(hostStore{})
 	// No running id here: OnInit is not a scheduler callback, so the successor
 	// is numbered from the note alone, which after CancelStale above is empty.
 	id, err := resume.Continue(hostScheduler{}, hostStore{}, initDelaySec, "generate", "")
@@ -154,6 +161,9 @@ type hostStore struct{}
 func (hostStore) Get(key string) ([]byte, bool, error) { return host.KVStoreGet(key) }
 func (hostStore) Set(key string, value []byte) error   { return host.KVStoreSet(key, value) }
 func (hostStore) Delete(key string) error              { return host.KVStoreDelete(key) }
+func (hostStore) SetWithTTL(key string, value []byte, ttl int64) error {
+	return host.KVStoreSetWithTTL(key, value, ttl)
+}
 
 // runningScheduleID is the id of the scheduler callback currently executing,
 // set by OnCallback and empty everywhere else. The plugin is one WASM instance
@@ -197,6 +207,76 @@ func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 	return generateAll()
 }
 
+// takeBite reads the watchdog mark and decides how much work this call may
+// bring back in one go. It is the first thing a generating call does, because
+// the mark is the only thing in the store that a KILLED call leaves behind.
+// See internal/resume/watchdog.go for why the budget cannot see a kill at all.
+//
+// ok is false when every rung of the ladder has been killed. The caller then
+// returns without asking for a continuation: on that server one host call
+// outlasts the host's own deadline, and no bite this plugin can take fits
+// inside it, so another call in five seconds is load and nothing else.
+func takeBite(day string) (*resume.Watch, resume.Bite, bool) {
+	watch := resume.NextWatch(hostStore{})
+	bite := watch.Bite(albumPages, resume.LoadPace(hostStore{}, day))
+	if watch.Kills > 0 {
+		where := watch.Phase
+		if watch.User != "" {
+			where += " for " + watch.User
+		}
+		skipping := ""
+		if bite.SkipStarred {
+			skipping = " and skipping the starred list"
+		}
+		logf("the previous call never returned (killed in %s), %d in a row now: asking for %d albums per list%s",
+			where, watch.Kills, bite.AlbumPages, skipping)
+	}
+	if bite.GiveUp {
+		logf("giving up for now: %d calls in a row were killed by the host before they could return, "+
+			"the last of them asking for a single album and no starred list. This server needs longer "+
+			"for one call than the host allows a plugin, so continuing every %ds would only add load. "+
+			"The next attempt is the daily run.", watch.Kills, continueDelaySec)
+		resume.ClearWatch(hostStore{})
+		return watch, bite, false
+	}
+	return watch, bite, true
+}
+
+// releaseWatch is what every call that RETURNS does on its way out: the mark
+// goes, because the mark means "still working", and a bite below the full one
+// is remembered, because this call returning is the only evidence there is
+// that the bite fits on this server.
+func releaseWatch(watch *resume.Watch, bite resume.Bite, day string) {
+	resume.ClearWatch(hostStore{})
+	// The bite is remembered only when this call actually reached the work
+	// that gets killed. A call that returned early, because every user was
+	// already done or because the server has no users, has proved nothing
+	// about how much this machine can carry, and remembering a punished bite
+	// on that evidence would slow the rest of the day down for nothing.
+	if watch.Phase != phasePool && watch.Phase != phaseMixes {
+		return
+	}
+	if err := resume.SavePace(hostStore{}, day, bite.Rung); err != nil {
+		logf("could not remember the working bite: %v", err)
+	}
+}
+
+// armWatch marks where the work is about to go, so a kill leaves the phase
+// behind it rather than only the fact that something died.
+// The phases a generating call passes through, named once so the log line
+// after a kill and the test of what counts as evidence cannot drift apart.
+const (
+	phaseUsers = "listing users"
+	phasePool  = "the candidate pool"
+	phaseMixes = "writing mixes"
+)
+
+func armWatch(watch *resume.Watch, phase, username string) {
+	if err := watch.Arm(hostStore{}, phase, username); err != nil {
+		logf("could not arm the watchdog: %v", err)
+	}
+}
+
 // generateAll rebuilds every enabled mix for every user, within the host's
 // call budget, and continues in a later call when it cannot finish.
 //
@@ -224,6 +304,16 @@ func generateAll() error {
 	day := resume.DayOf(time.Now())
 	ledger := loadLedger(day)
 
+	watch, bite, ok := takeBite(day)
+	if !ok {
+		return nil
+	}
+	// Every path out of here is a path that RETURNED, which is the whole
+	// meaning of the mark. A killed call runs no deferred function, so the
+	// mark it leaves behind is exactly the evidence the next call reads.
+	defer releaseWatch(watch, bite, day)
+	armWatch(watch, phaseUsers, "")
+
 	users, err := host.UsersGetUsers()
 	if err != nil || len(users) == 0 {
 		admins, aerr := host.UsersGetAdmins()
@@ -246,7 +336,7 @@ func generateAll() error {
 		if ledger.UserDone(u.UserName) {
 			continue
 		}
-		finished, err := generateForUser(cfg, u.UserName, ledger, budget)
+		finished, err := generateForUser(cfg, u.UserName, ledger, budget, bite, watch)
 		if err != nil {
 			logf("user %s: %v", u.UserName, err)
 		}
@@ -315,7 +405,8 @@ func deletePool(username string) {
 // generateForUser writes one user's plan, skipping what the ledger already
 // holds for today and stopping when the budget is spent. Returns whether the
 // user is finished; false means "call again".
-func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, budget *resume.Budget) (bool, error) {
+func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, budget *resume.Budget,
+	bite resume.Bite, watch *resume.Watch) (bool, error) {
 	// The guard against a chain that cannot end. A user whose plan got no
 	// further in each of the last few calls has a server this plugin cannot
 	// serve today, and the log should say so once rather than every five
@@ -334,11 +425,19 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// more getAlbum calls per user per run.
 	byRelease := cfg.MixEnabled("newmusic") && cfg.NewMusicOrder == string(mixes.NewMusicByReleased)
 	opts := library.CandidateOptions{
-		AlbumPages:    albumPages,
+		AlbumPages:    bite.AlbumPages,
+		SkipStarred:   bite.SkipStarred,
 		ByReleaseDate: byRelease,
 		Year:          time.Now().Year(),
 	}
 	// The parked pool is only ever this run's: same day, same options.
+	//
+	// The key deliberately carries the FULL page size and not the bite. A
+	// shrunken bite is this same run continuing, and a pool fetched half at a
+	// hundred albums a page and half at five is still this day's pool: the
+	// items are added, never replaced, and every album is deduplicated by id.
+	// Keying on the bite would throw the fetched half away at the exact
+	// moment the server proved it cannot afford to fetch it again (#502323).
 	runKey := ledger.Day + "|" + strconv.Itoa(albumPages) + "|" + strconv.FormatBool(byRelease) + "|" + strconv.Itoa(opts.Year)
 
 	pool := loadPool(username, runKey)
@@ -354,6 +453,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		}
 		return n + (len(ledger.DoneSlots(username)) << 21)
 	}
+	armWatch(watch, phasePool, username)
 	pool, err := client.Assemble(opts, pool, budget)
 	pool.Key = runKey
 	if err != nil {
@@ -513,6 +613,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// the kind the writes are measured by, so it is marked off rather than
 	// counted: the first write is judged by the limit alone.
 	budget.Mark()
+	armWatch(watch, phaseMixes, username)
 	written := 0
 	for _, e := range plan {
 		if ledger.SlotDone(username, e.slot) {
@@ -983,7 +1084,14 @@ func regenerateUserNow(cfg config.Config, username string) error {
 	// parked by an earlier call today goes too.
 	deletePool(username)
 	budget := resume.StartBudget(time.Duration(cfg.BudgetSeconds)*time.Second, time.Now)
-	finished, err := generateForUser(cfg, username, ledger, budget)
+	// A re-roll runs the same user pass and dies the same death on a server
+	// that cannot serve it, so it reads and leaves the same mark.
+	watch, bite, ok := takeBite(day)
+	if !ok {
+		return nil
+	}
+	defer releaseWatch(watch, bite, day)
+	finished, err := generateForUser(cfg, username, ledger, budget, bite, watch)
 	saveLedger(ledger)
 	if !finished {
 		scheduleContinuation(budget, username)
