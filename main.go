@@ -425,12 +425,15 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// more getAlbum calls per user per run.
 	byRelease := cfg.MixEnabled("newmusic") && cfg.NewMusicOrder == string(mixes.NewMusicByReleased)
 	opts := library.CandidateOptions{
-		AlbumPages:    bite.AlbumPages,
-		SkipStarred:   bite.SkipStarred,
-		ByReleaseDate: byRelease,
-		Year:          time.Now().Year(),
+		AlbumPages:     bite.AlbumPages,
+		SkipStarred:    bite.SkipStarred,
+		ByReleaseDate:  byRelease,
+		Year:           time.Now().Year(),
+		MusicFolderIDs: cfg.Libraries, // #502335
 	}
-	// The parked pool is only ever this run's: same day, same options.
+	// The parked pool is only ever this run's: same day, same options, and
+	// since #502335 the same library set: a pool parked for every library is
+	// not this run's pool once the setting narrows it.
 	//
 	// The key deliberately carries the FULL page size and not the bite. A
 	// shrunken bite is this same run continuing, and a pool fetched half at a
@@ -438,7 +441,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// items are added, never replaced, and every album is deduplicated by id.
 	// Keying on the bite would throw the fetched half away at the exact
 	// moment the server proved it cannot afford to fetch it again (#502323).
-	runKey := ledger.Day + "|" + strconv.Itoa(albumPages) + "|" + strconv.FormatBool(byRelease) + "|" + strconv.Itoa(opts.Year)
+	runKey := ledger.Day + "|" + strconv.Itoa(albumPages) + "|" + strconv.FormatBool(byRelease) + "|" + strconv.Itoa(opts.Year) + "|" + strings.Join(cfg.Libraries, ",")
 
 	pool := loadPool(username, runKey)
 	parked := pool != nil

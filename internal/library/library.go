@@ -190,6 +190,15 @@ type CandidateOptions struct {
 	// album fetch carries each track's starred flag too, so a starred track
 	// whose album is in one of the lists is still in the pool.
 	SkipStarred bool
+	// MusicFolderIDs restricts the pool to these Navidrome libraries, sent as
+	// a repeated `musicFolderId` on getStarred2 and on every getAlbumList2.
+	// Empty sends nothing, which the server reads as every library the
+	// account may see, the behaviour every existing install already has
+	// (#502335). Verified in the Navidrome source: both handlers call
+	// selectedMusicFolderIds, which reads the repeated parameter and
+	// intersects it with the account's accessible libraries, so an unknown
+	// id is dropped by the server rather than failing the call.
+	MusicFolderIDs []string
 }
 
 // releaseWindowYears is how far back the release-date list reaches, counted

@@ -65,6 +65,24 @@ type Config struct {
 	// And the part that is not ours to spend: an account that never asked for
 	// this gets twenty playlists dropped into their own library.
 	OnlyForUsers []string
+	// Libraries restricts which Navidrome libraries the candidate pool is
+	// drawn from, by library id. EMPTY MEANS EVERY LIBRARY THE ACCOUNT CAN
+	// SEE, which is what every existing install already does.
+	//
+	// James (#502335, 2026-09-13): a LoFi library he plays while studying
+	// skewed every mix, and his workaround was going to be a second account.
+	// The pool asks getStarred2 and getAlbumList2 with no musicFolderId, so
+	// the server answers across all of the account's libraries. Both calls
+	// accept the parameter, repeated, and Navidrome intersects the ids with
+	// the libraries the account may read (server/subsonic/helpers.go
+	// selectedMusicFolderIds), so an id that does not exist or is not the
+	// account's is dropped by the server rather than failing the run.
+	//
+	// What this does NOT scope: the listening clock. A scrobble carries no
+	// library id (scrobbler.TrackInfo), so the hour-of-day histogram still
+	// counts every play. That decides WHEN a time-of-day mix leans, never
+	// WHICH tracks it can pick; the pool decides that, and the pool is scoped.
+	Libraries []string
 	// WrappedSharing opts in to sending an aggregate recap for a shareable
 	// link. Off unless the user turns it on, and it is the ONLY thing in this
 	// plugin that can send anything anywhere.
@@ -368,6 +386,9 @@ func Load(get Getter) Config {
 	}
 	if v := strings.TrimSpace(get("onlyForUsers")); v != "" {
 		c.OnlyForUsers = splitList(v)
+	}
+	if v := strings.TrimSpace(get("libraries")); v != "" {
+		c.Libraries = splitList(v)
 	}
 	if v := strings.TrimSpace(get("genreNoiseThreshold")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {

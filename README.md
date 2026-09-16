@@ -239,6 +239,16 @@ server, including other people's private ones. That is Navidrome's own rule, not
 this plugin's, so an admin account will always see more playlists than a regular
 one. Narrowing the list above is what shortens it.
 
+### Drawing mixes from some libraries only
+
+If one Navidrome library keeps landing in mixes where it does not belong, a
+study playlist library or the children's music for instance, set `libraries`
+to the ids of the libraries the mixes should draw from, comma separated. The
+id is the number in the library's URL in Navidrome's own settings. Leave it
+empty and the mixes draw from every library the account can see, which is what
+every install did before this setting existed. The listening clock still counts
+every play; only which tracks a mix can pick is narrowed.
+
 ### On a slow server
 
 Navidrome stops any plugin call after 30 seconds, and a full run is about 300

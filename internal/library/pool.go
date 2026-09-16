@@ -161,6 +161,16 @@ func (p *Pool) Albums() int { return len(p.Seen) }
 
 // albumLists is the order the lists are fetched in. `newest` first because it
 // is the one that answers on a library nobody has played yet (see Candidates).
+// folderParams adds the configured libraries to a query as a repeated
+// `musicFolderId` (#502335). Nothing is added when none are configured, so
+// the query is byte for byte what it was before the setting existed.
+func folderParams(params url.Values, folders []string) url.Values {
+	for _, id := range folders {
+		params.Add("musicFolderId", id)
+	}
+	return params
+}
+
 func albumLists(opts CandidateOptions) []url.Values {
 	lists := []url.Values{
 		{"type": {"newest"}},
@@ -266,7 +276,7 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 		p.Starred = true
 	}
 	if !p.Starred {
-		env, err := c.do("getStarred2", url.Values{})
+		env, err := c.do("getStarred2", folderParams(url.Values{}, opts.MusicFolderIDs))
 		if err != nil {
 			return p, err
 		}
@@ -285,7 +295,7 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 				params[k] = v
 			}
 			params.Set("size", strconv.Itoa(opts.AlbumPages))
-			env, err := c.do("getAlbumList2", params)
+			env, err := c.do("getAlbumList2", folderParams(params, opts.MusicFolderIDs))
 			if err != nil {
 				return p, err
 			}
