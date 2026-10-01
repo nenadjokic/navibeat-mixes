@@ -73,10 +73,10 @@ type Config struct {
 	// skewed every mix, and his workaround was going to be a second account.
 	// The pool asks getStarred2 and getAlbumList2 with no musicFolderId, so
 	// the server answers across all of the account's libraries. Both calls
-	// accept the parameter, repeated, and Navidrome intersects the ids with
-	// the libraries the account may read (server/subsonic/helpers.go
-	// selectedMusicFolderIds), so an id that does not exist or is not the
-	// account's is dropped by the server rather than failing the run.
+	// accept the parameter, repeated. Navidrome does NOT drop an id the
+	// account cannot see: it fails the call (server/subsonic/helpers.go,
+	// selectedMusicFolderIds, v0.64.2), so the pool asks getMusicFolders
+	// first and sends only the ids that exist for the account (#502717).
 	//
 	// What this does NOT scope: the listening clock. A scrobble carries no
 	// library id (scrobbler.TrackInfo), so the hour-of-day histogram still

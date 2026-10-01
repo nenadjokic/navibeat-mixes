@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nenadjokic/navibeat-mixes/internal/mixes"
@@ -101,6 +102,15 @@ type envelope struct {
 				ID string `json:"id"`
 			} `json:"album"`
 		} `json:"albumList2"`
+		// MusicFolders is the getMusicFolders answer: the libraries this
+		// account can see. Navidrome writes the id as a number and a string is
+		// accepted too, so a server that quotes it still parses (#502717).
+		MusicFolders struct {
+			MusicFolder []struct {
+				ID   flexID `json:"id"`
+				Name string `json:"name"`
+			} `json:"musicFolder"`
+		} `json:"musicFolders"`
 		Album         album `json:"album"`
 		SearchResult3 struct {
 			Song []song `json:"song"`
@@ -167,6 +177,32 @@ func (c *Client) do(endpoint string, params url.Values) (*envelope, error) {
 	return &env, nil
 }
 
+// flexID is an id that may arrive as a JSON number or as a JSON string and
+// is kept as the string the Subsonic query wants back.
+type flexID string
+
+func (f *flexID) UnmarshalJSON(b []byte) error {
+	*f = flexID(strings.Trim(string(b), `"`))
+	return nil
+}
+
+// AccessibleLibraries is the list of library ids this account may read, from
+// getMusicFolders. The pool uses it to drop a configured id the server would
+// refuse (#502717).
+func (c *Client) AccessibleLibraries() ([]string, error) {
+	env, err := c.do("getMusicFolders", url.Values{})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(env.Response.MusicFolders.MusicFolder))
+	for _, f := range env.Response.MusicFolders.MusicFolder {
+		if f.ID != "" {
+			ids = append(ids, string(f.ID))
+		}
+	}
+	return ids, nil
+}
+
 // CandidateOptions says how the pool is assembled. The zero value is exactly
 // what Candidates has always done.
 type CandidateOptions struct {
@@ -194,10 +230,11 @@ type CandidateOptions struct {
 	// a repeated `musicFolderId` on getStarred2 and on every getAlbumList2.
 	// Empty sends nothing, which the server reads as every library the
 	// account may see, the behaviour every existing install already has
-	// (#502335). Verified in the Navidrome source: both handlers call
-	// selectedMusicFolderIds, which reads the repeated parameter and
-	// intersects it with the account's accessible libraries, so an unknown
-	// id is dropped by the server rather than failing the call.
+	// (#502335). Read in the Navidrome source (server/subsonic/helpers.go,
+	// selectedMusicFolderIds, v0.64.2): an id outside the account's
+	// libraries is NOT dropped, it fails the call with "Library N not found
+	// or not accessible". So Assemble asks getMusicFolders first and sends
+	// only the configured ids the account can see (#502717).
 	MusicFolderIDs []string
 }
 

@@ -247,7 +247,9 @@ to the ids of the libraries the mixes should draw from, comma separated. The
 id is the number in the library's URL in Navidrome's own settings. Leave it
 empty and the mixes draw from every library the account can see, which is what
 every install did before this setting existed. The listening clock still counts
-every play; only which tracks a mix can pick is narrowed.
+every play; only which tracks a mix can pick is narrowed. An id the account cannot see
+is skipped and named in the log, so a typo narrows nothing and stops nothing
+(0.9.14; before that, Navidrome refused the whole call).
 
 ### On a slow server
 

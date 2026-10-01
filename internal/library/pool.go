@@ -161,6 +161,44 @@ func (p *Pool) Albums() int { return len(p.Seen) }
 
 // albumLists is the order the lists are fetched in. `newest` first because it
 // is the one that answers on a library nobody has played yet (see Candidates).
+// scopeLibraries returns the configured library ids the account can see.
+//
+// Navidrome refuses a musicFolderId outside the account's libraries with
+// "Library N not found or not accessible" (server/subsonic/helpers.go,
+// v0.64.2), and that one answer fails getStarred2 and every getAlbumList2,
+// so a mistyped id in the setting used to stop the whole run with nothing
+// pointing at the setting (#502717). Each dropped id is named in the log.
+// An empty remainder is sent as nothing, which means every library, the
+// same as an empty setting. When getMusicFolders itself cannot be read the
+// configured ids go through unchanged, which is what happened before this
+// check existed. Nothing is asked when nothing is configured.
+func (c *Client) scopeLibraries(configured []string) []string {
+	if len(configured) == 0 {
+		return configured
+	}
+	visible, err := c.AccessibleLibraries()
+	if err != nil {
+		logf("could not read the account's libraries (%v), sending the configured ids as they are", err)
+		return configured
+	}
+	ok := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		ok[id] = true
+	}
+	kept := make([]string, 0, len(configured))
+	for _, id := range configured {
+		if ok[id] {
+			kept = append(kept, id)
+			continue
+		}
+		logf("libraries: id %q is not a library this account can see (it has %v), skipping it", id, visible)
+	}
+	if len(kept) == 0 {
+		logf("libraries: none of the configured ids %v is visible to this account, drawing from every library it can see", configured)
+	}
+	return kept
+}
+
 // folderParams adds the configured libraries to a query as a repeated
 // `musicFolderId` (#502335). Nothing is added when none are configured, so
 // the query is byte for byte what it was before the setting existed.
@@ -266,6 +304,8 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 			})
 		}
 	}
+
+	opts.MusicFolderIDs = c.scopeLibraries(opts.MusicFolderIDs)
 
 	if !p.Starred && opts.SkipStarred {
 		// Marked done rather than left pending: a pending phase would be
