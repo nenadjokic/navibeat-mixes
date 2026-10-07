@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -446,18 +445,35 @@ func logf(format string, args ...any) {
 
 // ReplaceTracks sets a playlist's contents to exactly the given ids.
 //
-// It clears by index from the end backwards. Removing from the front would
-// renumber every remaining entry as it went, so the indices in the same
-// request would refer to different tracks by the time they were applied.
-func (c *Client) ReplaceTracks(playlistID string, current int, trackIDs []string) error {
+// It uses createPlaylist with playlistId, which Navidrome treats as "replace
+// every track of this playlist": core/playlists/playlists.go Create loads the
+// playlist, empties its track list and stores the new one, and
+// persistence/playlist_repository.go updatePlaylist deletes every
+// playlist_tracks row for the id before inserting. Name, comment and public
+// come back from the stored row and are written unchanged.
+//
+// navibeat-mixes#8: this used updatePlaylist with songIndexToRemove 0..n-1,
+// where n was getPlaylist's songCount. That count only includes rows that are
+// not missing and that the caller's libraries can see, while the removal is by
+// position over every row. So a missing file, or a track from a library the
+// account no longer reads, sat at the head of the playlist and survived every
+// rewrite, and more of them piled up each night.
+//
+// The server checks that the caller owns the playlist (or is an admin) and
+// refuses a smart or synced playlist. EnsurePlaylist only hands back
+// playlists owned by this client's user, so the first holds. An empty list is
+// never sent: Navidrome's Put skips the track rewrite when there are no tracks,
+// so it would leave the old contents in place, and writeNamed already refuses
+// a mix under minMixSize.
+func (c *Client) ReplaceTracks(playlistID string, trackIDs []string) error {
+	if len(trackIDs) == 0 {
+		return fmt.Errorf("replace %s: no tracks to write", playlistID)
+	}
 	params := url.Values{"playlistId": {playlistID}}
-	for i := current - 1; i >= 0; i-- {
-		params.Add("songIndexToRemove", strconv.Itoa(i))
-	}
 	for _, id := range trackIDs {
-		params.Add("songIdToAdd", id)
+		params.Add("songId", id)
 	}
-	_, err := c.do("updatePlaylist", params)
+	_, err := c.do("createPlaylist", params)
 	return err
 }
 
@@ -467,16 +483,6 @@ func (c *Client) SetComment(playlistID, comment string) error {
 		"playlistId": {playlistID}, "comment": {comment},
 	})
 	return err
-}
-
-// TrackCount reports how many tracks a playlist currently holds, which
-// ReplaceTracks needs in order to clear it.
-func (c *Client) TrackCount(playlistID string) (int, error) {
-	env, err := c.do("getPlaylist", url.Values{"id": {playlistID}})
-	if err != nil {
-		return 0, err
-	}
-	return env.Response.Playlist.SongCount, nil
 }
 
 // parseTime accepts the ISO timestamps Navidrome emits and returns the zero

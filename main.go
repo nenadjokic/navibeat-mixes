@@ -774,11 +774,7 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 		return writeFailed
 	}
 
-	count, err := client.TrackCount(id)
-	if err != nil {
-		count = 0
-	}
-	if err := client.ReplaceTracks(id, count, sel.TrackIDs); err != nil {
+	if err := client.ReplaceTracks(id, sel.TrackIDs); err != nil {
 		logf("user %s: writing tracks: %v", username, err)
 		return writeFailed
 	}
