@@ -233,7 +233,9 @@ type CandidateOptions struct {
 	// selectedMusicFolderIds, v0.64.2): an id outside the account's
 	// libraries is NOT dropped, it fails the call with "Library N not found
 	// or not accessible". So Assemble asks getMusicFolders first and sends
-	// only the configured ids the account can see (#502717).
+	// only the configured ids the account can see (#502717). When it can see
+	// none of them, Assemble fetches nothing and returns an empty pool
+	// (decision D40 A, 0.9.17) rather than widening to every library.
 	MusicFolderIDs []string
 }
 

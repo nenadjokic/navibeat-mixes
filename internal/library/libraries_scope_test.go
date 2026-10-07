@@ -73,26 +73,36 @@ func TestAnIdTheAccountCannotSeeIsDroppedNotSent(t *testing.T) {
 	}
 }
 
-func TestEveryIdUnknownSendsNothingLikeAnEmptySetting(t *testing.T) {
+// Decision D40 A (2026-10-07): from 0.9.17 a setting whose ids are ALL
+// invisible to the account fails closed. Up to 0.9.16 this test pinned the
+// opposite (nothing sent, so every library), which drew from exactly the
+// libraries the setting exists to keep out. An EMPTY setting still sends
+// nothing and still means every library (TestNoConfiguredLibrariesNeverAsksForFolders).
+func TestEveryIdUnknownFetchesNothingAndBuildsNoPool(t *testing.T) {
 	f := newFakeServer()
 	f.starred = []string{"s0"}
 	f.lists["newest"] = []string{"a1"}
 	f.albums["a1"] = []string{"a1-x"}
 
-	var starredURIs []string
+	var fetched []string
 	inner := serverWithFolders(f, "3")
 	call := func(uri string) (string, error) {
-		if strings.HasPrefix(uri, "getStarred2") {
-			starredURIs = append(starredURIs, uri)
+		endpoint, _, _ := strings.Cut(uri, "?")
+		if endpoint == "getStarred2" || endpoint == "getAlbumList2" || endpoint == "getAlbum" {
+			fetched = append(fetched, endpoint)
 		}
 		return inner(uri)
 	}
 	opts := CandidateOptions{AlbumPages: 100, MusicFolderIDs: []string{"8", "9"}}
-	if _, err := New(call, "alice").Assemble(opts, nil, nil); err != nil {
+	p, err := New(call, "alice").Assemble(opts, nil, nil)
+	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if ids := starredFolderIDs(t, starredURIs); len(ids) != 0 {
-		t.Fatalf("getStarred2 musicFolderId=%v, want none: no configured id exists", ids)
+	if len(fetched) != 0 {
+		t.Fatalf("%v were called, want none: no configured id is visible to the account", fetched)
+	}
+	if !p.Complete || len(p.Tracks()) != 0 {
+		t.Fatalf("pool complete=%v with %d tracks, want complete and empty", p.Complete, len(p.Tracks()))
 	}
 }
 

@@ -168,18 +168,22 @@ func (p *Pool) Albums() int { return len(p.Seen) }
 // v0.64.2), and that one answer fails getStarred2 and every getAlbumList2,
 // so a mistyped id in the setting used to stop the whole run with nothing
 // pointing at the setting (#502717). Each dropped id is named in the log.
-// An empty remainder is sent as nothing, which means every library, the
-// same as an empty setting. When getMusicFolders itself cannot be read the
-// configured ids go through unchanged, which is what happened before this
-// check existed. Nothing is asked when nothing is configured.
-func (c *Client) scopeLibraries(configured []string) []string {
+// When none of the configured ids is visible the second result is true and
+// the caller fetches nothing for this account (decision D40 A, 0.9.17): up to
+// 0.9.16 the empty remainder was sent as nothing, which the server reads as
+// every library the account sees, so the setting widened to exactly the
+// libraries it exists to keep out. Only a NON-empty setting fails closed; an
+// empty one still means every library. When getMusicFolders itself cannot be
+// read the configured ids go through unchanged, which is what happened before
+// this check existed. Nothing is asked when nothing is configured.
+func (c *Client) scopeLibraries(configured []string) ([]string, bool) {
 	if len(configured) == 0 {
-		return configured
+		return configured, false
 	}
 	visible, err := c.AccessibleLibraries()
 	if err != nil {
 		logf("could not read the account's libraries (%v), sending the configured ids as they are", err)
-		return configured
+		return configured, false
 	}
 	ok := make(map[string]bool, len(visible))
 	for _, id := range visible {
@@ -194,9 +198,10 @@ func (c *Client) scopeLibraries(configured []string) []string {
 		logf("libraries: id %q is not a library this account can see (it has %v), skipping it", id, visible)
 	}
 	if len(kept) == 0 {
-		logf("libraries: none of the configured ids %v is visible to this account, drawing from every library it can see", configured)
+		logf("libraries: none of the configured ids %v is visible to %s (it has %v); no mixes built for this account", configured, c.user, visible)
+		return nil, true
 	}
-	return kept
+	return kept, false
 }
 
 // folderParams adds the configured libraries to a query as a repeated
@@ -305,7 +310,15 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 		}
 	}
 
-	opts.MusicFolderIDs = c.scopeLibraries(opts.MusicFolderIDs)
+	scoped, none := c.scopeLibraries(opts.MusicFolderIDs)
+	if none {
+		// Fail closed (D40 A): an empty, complete pool, so the caller logs
+		// "no candidate tracks" and moves on instead of fetching across
+		// every library. A pool parked earlier while a configured library
+		// was still visible is dropped with it.
+		return &Pool{Key: p.Key, Format: p.Format, Complete: true}, nil
+	}
+	opts.MusicFolderIDs = scoped
 
 	if !p.Starred && opts.SkipStarred {
 		// Marked done rather than left pending: a pending phase would be

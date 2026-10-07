@@ -248,8 +248,11 @@ id is the number in the library's URL in Navidrome's own settings. Leave it
 empty and the mixes draw from every library the account can see, which is what
 every install did before this setting existed. The listening clock still counts
 every play; only which tracks a mix can pick is narrowed. An id the account cannot see
-is skipped and named in the log, so a typo narrows nothing and stops nothing
-(0.9.14; before that, Navidrome refused the whole call).
+is skipped and named in the log, so one typo among good ids stops nothing
+(0.9.14; before that, Navidrome refused the whole call). When an account can see
+none of the configured ids, it gets no mixes at all and the log says so, naming
+the ids and the account (0.9.17). Before 0.9.17 that account drew from every
+library it could see, which is the opposite of what the setting asks for.
 
 ### On a slow server
 
