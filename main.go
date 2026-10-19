@@ -493,12 +493,18 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	now := time.Now()
 
 	// Every mix is described in one place, so adding one is a line here rather
-	// than a new branch. Name and slot are FIXED per entry: nothing that varies
-	// with the content ever reaches a playlist name, which is what stops the
-	// library filling with orphans as rankings shift.
+	// than a new branch. The SLOT is fixed per entry and is what identifies the
+	// playlist (through the marker in its description), so a name that follows
+	// the content, which the optional {subject} templates allow, renames the
+	// playlist in place instead of leaving an orphan behind as rankings shift.
+	// With no template set the name is fixed too, as it always was.
 	type entry struct {
-		key   string
-		name  string
+		key  string
+		name string
+		// def is the numbered default name, prefix included. name is the same
+		// unless a {subject} template renamed the mix; def is what a name
+		// collision falls back to.
+		def   string
 		slot  string
 		human string
 		kind  string
@@ -506,12 +512,23 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	}
 	var plan []entry
 
-	add := func(key, name, slot, human, kind string, sel mixes.Selection) {
+	// addAs is add with the name spelled out in full: name is what the mix is
+	// called now, def the numbered default it falls back to on a collision.
+	addAs := func(key, name, def, slot, human, kind string, sel mixes.Selection) {
 		if !cfg.MixEnabled(key) {
 			return
 		}
 		sel.Slot = mixes.Slot(slot)
-		plan = append(plan, entry{key, cfg.Prefix + name, slot, human, kind, sel})
+		plan = append(plan, entry{key, name, def, slot, human, kind, sel})
+	}
+	add := func(key, name, slot, human, kind string, sel mixes.Selection) {
+		addAs(key, cfg.Prefix+name, cfg.Prefix+name, slot, human, kind, sel)
+	}
+	// addSubject adds a mix whose name may follow its subject (the genre, the
+	// artist, the decade) through the user's template. With no template the
+	// name is the default, exactly as before. The description is not touched.
+	addSubject := func(key, kind, subject, def, slot, human string, sel mixes.Selection) {
+		addAs(key, cfg.SubjectName(kind, naming.Subject(subject), def), cfg.Prefix+def, slot, human, kind, sel)
 	}
 
 	add("rediscover", cfg.SlotNames["rediscover"], "rediscover", "", "rediscover",
@@ -525,8 +542,9 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			MinUseful:    minMixSize,
 		}))
 
-	// The name and the slot never change with the order; only the description
-	// says which "new" this is, and the description is free to change.
+	// The name is fixed here (no template applies to this mix) and the slot
+	// never changes with the order; only the description says which "new" this
+	// is, and the description is free to change.
 	newMusicHuman := "NaviBeat Mixes: the newest additions to your library."
 	if byRelease {
 		newMusicHuman = "NaviBeat Mixes: the newest releases in your library."
@@ -550,19 +568,23 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		"NaviBeat Mixes: music you own, played once or twice, and then forgot.", "discovery",
 		mixes.BuildDiscovery(tracks, now, 90*24*time.Hour, cfg.MixSize, cfg.MaxPerArtist))
 
-	// Numbered mixes. The NUMBER is the identity and the subject goes in the
-	// description, so the name never changes when the ranking does.
+	// Numbered mixes. The NUMBER (the slot) is the identity and the subject goes
+	// in the description, so by default the name does not change when the
+	// ranking does. A {subject} template changes that on purpose: the playlist
+	// is found by its marker, not its name, and is renamed in place (same id)
+	// when its subject rotates.
 	// Weekly rotation. The pool is deliberately DEEPER than the window: with
 	// 20 artists showing 5 at a time, a listener meets a different five every
 	// week and the whole library comes round eventually, instead of staring at
-	// the same top five forever. The name never moves, only what is inside it.
+	// the same top five forever. Without a template only what is inside a
+	// playlist moves; with one, the name follows the subject too.
 	week := mixes.WeekIndex(now)
 
 	// Same floor and same reason as the artist pool below: a genre that cannot
 	// fill a mix must not be given a number it will then fail to use.
 	for i, g := range mixes.Rotate(mixes.TopGenresOwning(tracks, 12, minMixSize, cfg.MaxPerArtist), week, 3) {
-		add("genreradio", "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
-			naming.Sentence("genreradio", g), "genreradio",
+		addSubject("genreradio", "genreradio", g, "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
+			naming.Sentence("genreradio", g),
 			mixes.BuildForGenre(tracks, g, cfg.MixSize, cfg.MaxPerArtist))
 	}
 	// The 20 are the artists that can actually FILL an Artist Radio: an artist
@@ -573,8 +595,8 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// pool of exactly 20 and their weekly rotation does not move.
 	artists := mixes.Rotate(mixes.TopArtistsOwning(tracks, 20, minMixSize), week, 5)
 	for i, a := range artists {
-		add("artistradio", "Artist Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.ArtistRadio, i+1),
-			naming.Sentence("artistradio", a), "artistradio",
+		addSubject("artistradio", "artistradio", a, "Artist Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.ArtistRadio, i+1),
+			naming.Sentence("artistradio", a),
 			mixes.BuildForArtist(tracks, a, cfg.MixSize))
 	}
 	for i := 0; i < 3 && i < len(artists); i++ {
@@ -586,8 +608,8 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// cannot fill a mix must not take a rotation slot it will then leave empty.
 	for _, d := range mixes.Rotate(mixes.TopDecadesOwning(tracks, 6, minMixSize, cfg.MaxPerArtist), week, 2) {
 		label := strconv.Itoa(d) + "s"
-		add("decade", label, "decade-"+strconv.Itoa(d),
-			naming.Sentence("decade", label), "decade",
+		addSubject("decade", "decade", label, label, "decade-"+strconv.Itoa(d),
+			naming.Sentence("decade", label),
 			mixes.BuildForDecade(tracks, d, cfg.MixSize, cfg.MaxPerArtist))
 	}
 
@@ -597,7 +619,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			Plays: state.TotalPlays(), Size: cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist,
 		})
 		sel.Slot = mixes.Slot(mixes.WrappedSlot(year))
-		plan = append(plan, entry{"wrapped", cfg.Prefix + mixes.WrappedName(year), mixes.WrappedSlot(year),
+		plan = append(plan, entry{"wrapped", cfg.Prefix + mixes.WrappedName(year), cfg.Prefix + mixes.WrappedName(year), mixes.WrappedSlot(year),
 			"NaviBeat Mixes: your most played, since the plugin was installed. Grows through the year.", "wrapped", sel})
 	}
 
@@ -611,6 +633,17 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			Day: mixes.DayIndex(now),
 		})
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
+	}
+
+	// Two mixes must never end up with the same name. The plan order is fixed,
+	// so the first keeps its name and a later one falls back to its numbered
+	// default, the same way on every run.
+	items := make([]naming.Item, len(plan))
+	for i, e := range plan {
+		items[i] = naming.Item{Name: e.name, Default: e.def}
+	}
+	for i, name := range naming.ResolveCollisions(items) {
+		plan[i].name = name
 	}
 
 	// Building the plan is one piece of CPU work per call, not a step of
@@ -656,7 +689,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		// The retry cannot spin. MarkUserDone below runs whatever happens, so
 		// the day still ends, and every slot that succeeds drops out of the
 		// next pass, so successive passes get shorter rather than longer.
-		outcome := writeNamed(client, cfg, e.name, e.sel, human, e.kind, now, username)
+		outcome := writeNamed(client, cfg, e.name, e.def, e.sel, human, e.kind, now, username)
 		if outcome != writeFailed {
 			ledger.MarkSlotDone(username, e.slot)
 		}
@@ -688,7 +721,7 @@ func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, no
 		return
 	}
 
-	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
+	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
 }
 
 // publishStyle writes the presentation style onto the control playlist, and is
@@ -763,15 +796,16 @@ const (
 // numbered mix came through here and this branch said nothing at all. One line
 // naming the playlist and its count against the threshold is what turns a
 // missing number into something a person can read off a log.
-func writeNamed(client *library.Client, cfg config.Config, name string, sel mixes.Selection, human, kind string, now time.Time, username string) writeOutcome {
+func writeNamed(client *library.Client, cfg config.Config, name, legacy string, sel mixes.Selection, human, kind string, now time.Time, username string) writeOutcome {
 	if len(sel.TrackIDs) < minMixSize {
 		logf("user %s: %s has %d tracks, under the %d a mix needs, so it was left alone",
 			username, name, len(sel.TrackIDs), minMixSize)
 		return writeTooSmall
 	}
-	// Found by the (kind, slot) marker, not by name, so a changed prefix
-	// renames the playlist in place instead of creating a second one beside it.
-	id, created, err := client.EnsureMix(kind, string(sel.Slot), name)
+	// Found by the (kind, slot) marker, not by name, so a changed prefix or a
+	// subject template renames the playlist in place instead of creating a
+	// second one beside it.
+	id, created, err := client.EnsureMix(kind, string(sel.Slot), name, legacy)
 	if err != nil {
 		logf("user %s: %v", username, err)
 		return writeFailed

@@ -50,7 +50,7 @@ Up to 23 playlists, every one of them optional.
 | Decade mixes | Your strongest decades, for example 1990s |
 | Wrapped 2026 | Your most played since the plugin was installed |
 
-### The contents rotate weekly, the names do not
+### The contents rotate weekly; the names are fixed unless you ask otherwise
 
 Artist Radio, Genre Radio, Daily Mix and the decade mixes draw from a pool far
 deeper than they show: 20 artists behind 5 slots, 12 genres behind 3. Every
@@ -69,6 +69,9 @@ plugins need a cleanup script on a cron.
 Here the name is "Artist Radio 1" and the artist goes in the description. The
 number is the identity, so the playlist you pinned last month is still the same
 playlist today, whatever is inside it.
+
+If you want the artist, genre or decade in the name, you can opt in, see
+[Subject names](#subject-names).
 
 ## Honest about what it knows
 
@@ -172,6 +175,25 @@ on the next run, so copy a playlist instead of renaming it. Older playlists
 without a marker are adopted by their exact name. Only your own playlists are
 looked at, and nothing is ever deleted. If you copy a mix and the copy keeps the
 description, the original is still the one that is updated, not the copy.
+
+## Subject names
+
+Three optional settings in the Names group name a mix after what is in it, with
+one placeholder, `{subject}`:
+
+| Setting | Example | Result |
+|---|---|---|
+| Name: Artist Radio | `Radio: {subject}` | `Radio: Billy Talent` |
+| Name: Genre Radio | `{subject} Mix` | `Punk Mix` |
+| Name: Decade | `{subject} Hits` | `1990s Hits` |
+
+- Empty (the default) keeps `Artist Radio 1`, `Genre Radio 1`, `1990s`.
+- The name is cut to 100 characters; the prefix is added after and not counted.
+- Fixed names (Morning, New Music, ...) keep their name. If a name from a
+  template is taken, that mix falls back to its numbered default, then `(2)`, `(3)`.
+- Daily Mix has no name setting.
+- With a name set, older playlists are adopted only if they look like ours: the old default name,
+  or the new name plus the "Made by NaviBeat" line.
 
 ## Configuration
 
@@ -439,6 +461,9 @@ generated cover per mix, stable from day to day.
 **`button`** trades the artwork for width. The row becomes compact buttons with
 an icon per mix, which is worth it when a shelf of six covers starts reading as
 one thing repeated rather than six different mixes.
+
+With the button style, the label is the playlist name as rendered now, prefix
+removed.
 
 ![The button style](docs/img/style-button.png)
 

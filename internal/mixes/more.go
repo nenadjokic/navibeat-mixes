@@ -10,13 +10,17 @@ import (
 // The mixes in this file exist to make a separate playlist plugin unnecessary.
 //
 // ONE RULE SHAPES ALL OF THEM, and it is the difference between this and the
-// plugin they replace: a playlist name NEVER contains variable data. Not an
-// artist, not a genre, not a rank. Naming a playlist "Artist Radio 1: LINKIN
-// PARK" means that the day your listening shifts, the name changes, a brand
+// plugin they replace: a playlist is never found by its name. Naming a
+// playlist "Artist Radio 1: LINKIN PARK" in a plugin that looks playlists up
+// by name means that the day your listening shifts, the name changes, a brand
 // new playlist appears, and the old one is orphaned. That is why servers
-// running such a plugin end up needing a cleanup script on a cron. Here the
-// name is "Artist Radio 1" and the artist goes in the DESCRIPTION, which
-// changes freely because nothing keys on it.
+// running such a plugin end up needing a cleanup script on a cron.
+//
+// Here the identity is the (kind, slot) marker in the description, and by
+// default the name is still the fixed "Artist Radio 1" with the artist in the
+// DESCRIPTION. If the user sets a {subject} name template the name may contain
+// the subject, and that is safe because the playlist is found by its marker
+// and renamed in place, never duplicated.
 
 // Extra slots. Numbered ones are stable identities: "Genre Radio 2" is always
 // the second strongest genre, whatever that turns out to be this week.

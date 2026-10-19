@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nenadjokic/navibeat-mixes/internal/naming"
 	"github.com/nenadjokic/navibeat-mixes/internal/resume"
 )
 
@@ -93,6 +94,11 @@ type Config struct {
 	// SlotNames maps a slot key to the human name used in the playlist title,
 	// so the mixes can speak the user's language.
 	SlotNames map[string]string
+	// NameTemplates holds the optional {subject} name template per mix family,
+	// keyed by kind ("artistradio", "genreradio", "decade"). A
+	// family with no entry keeps its numbered default name. The template is
+	// rendered by the naming package; the prefix is added after.
+	NameTemplates map[string]string
 	// MixStyle is how NaviBeat clients should DRAW these playlists: the
 	// generated NaviBeat artwork, the server's own album mosaic, or a compact
 	// row of buttons.
@@ -242,6 +248,7 @@ func Defaults() Config {
 		EnabledMixes:         nil,
 		WrappedSharing:       false,
 		MixSwitches:          map[string]bool{},
+		NameTemplates:        map[string]string{},
 		SlotNames: map[string]string{
 			"morning":    "Morning",
 			"afternoon":  "Afternoon",
@@ -266,6 +273,13 @@ var nameSlots = []struct{ key, suffix string }{
 	{"morning", "Morning"}, {"afternoon", "Afternoon"},
 	{"evening", "Evening"}, {"night", "Night"},
 	{"rediscover", "Rediscover"},
+}
+
+// templateFamilies is every mix family whose name can follow its subject, with
+// the settings key that holds the template.
+var templateFamilies = []struct{ kind, field string }{
+	{"artistradio", "nameArtistRadio"},
+	{"genreradio", "nameGenreRadio"}, {"decade", "nameDecade"},
 }
 
 // buttonFamilies is every mix family that can carry an icon and a colour
@@ -409,6 +423,11 @@ func Load(get Getter) Config {
 			c.SlotNames[s.key] = v
 		}
 	}
+	for _, f := range templateFamilies {
+		if v := strings.TrimSpace(get(f.field)); v != "" {
+			c.NameTemplates[f.kind] = v
+		}
+	}
 	// Per-mix switches. Only an explicit value counts: an unset switch must
 	// leave the mix at its default rather than silently disabling it.
 	for _, m := range []struct{ key, field string }{
@@ -503,6 +522,15 @@ func (c Config) PlaylistName(slot string) string {
 		name = slot
 	}
 	return c.Prefix + name
+}
+
+// SubjectName is the full name of a mix whose family can be named after its
+// subject: the template for that kind rendered with the subject, or def when
+// no template is set. The prefix is added here, after rendering, so it never
+// counts against the 100 character cut. def is the BARE default ("Artist
+// Radio 1"), which also gets the prefix.
+func (c Config) SubjectName(kind, subject, def string) string {
+	return c.Prefix + naming.Render(c.NameTemplates[kind], subject, def)
 }
 
 func positiveInt(s string) (int, bool) {
