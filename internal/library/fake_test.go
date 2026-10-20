@@ -30,8 +30,8 @@ func (s *fakeNavidrome) call(uri string) (string, error) {
 		s.listCalls++
 		var items []string
 		for _, l := range s.lists {
-			items = append(items, fmt.Sprintf(`{"id":%q,"name":%q,"comment":%q,"owner":%q,"changed":%q,"created":%q}`,
-				l.ID, l.Name, l.Comment, l.Owner, l.Changed, l.Created))
+			items = append(items, fmt.Sprintf(`{"id":%q,"name":%q,"comment":%q,"owner":%q,"created":%q}`,
+				l.ID, l.Name, l.Comment, l.Owner, l.Created))
 		}
 		return `{"subsonic-response":{"status":"ok","playlists":{"playlist":[` + strings.Join(items, ",") + `]}}}`, nil
 	case endpoint == "createPlaylist" && p.Get("playlistId") != "":
@@ -87,7 +87,12 @@ func (s *fakeNavidrome) did(op string) int {
 
 // marker is the description a mix written by the plugin carries.
 func marker(kind, slot string) string {
-	return protocol.Format("human", protocol.Meta{Kind: kind, Slot: slot, Date: "2026-01-01", Mode: "affinity", Count: 30})
+	return markerOn(kind, slot, "2026-01-01")
+}
+
+// markerOn is the same with the generation date the plugin wrote.
+func markerOn(kind, slot, date string) string {
+	return protocol.Format("human", protocol.Meta{Kind: kind, Slot: slot, Date: date, Mode: "affinity", Count: 30})
 }
 
 // captureLog collects what the package logs until the test ends.

@@ -152,10 +152,9 @@ type Playlist struct {
 	Comment   string `json:"comment"`
 	Owner     string `json:"owner"`
 	SongCount int    `json:"songCount"`
-	// Changed and Created are the timestamps getPlaylists sends (Navidrome's
-	// buildPlaylist fills both). Changed is what picks the survivor when two
-	// playlists claim the same mix, see EnsureMix.
-	Changed string `json:"changed"`
+	// Created is the timestamp getPlaylists sends (Navidrome's buildPlaylist
+	// fills it). It picks the survivor when two playlists claim the same mix
+	// and carry the same marker date, see findByMarker.
 	Created string `json:"created"`
 }
 
@@ -485,19 +484,22 @@ func (c *Client) findToAdopt(kind, slot, name string) int {
 
 // findByMarker returns the index in c.playlists of this user's playlist for
 // (kind, slot), or -1. When several carry the marker (a copy the user made
-// keeps it too) they are ranked:
+// keeps the description, and so the marker, too) they are ranked:
 //
 //  1. its name equals the wanted name,
-//  2. otherwise the most recently changed, then the most recently created,
-//     then the first listed.
+//  2. otherwise the newest marker date, then the oldest creation time, then the
+//     first listed.
 //
-// Within a tier the same recency order breaks ties. The ranking is what stops a
-// duplicate the user made, and is editing, from taking over the mix because it
-// happens to be newer than the real one.
+// Within a tier the same order breaks ties. The marker date is rewritten on
+// every run, so the real mix always carries a date at least as new as any copy
+// of it, and a copy is always created after the playlist it was copied from.
+// Recency of editing is deliberately not used: a copy the user is working on is
+// the most recently changed playlist, and after a prefix change neither has the
+// wanted name, so it would take over the mix.
 func (c *Client) findByMarker(kind, slot, name string) int {
 	best := -1
 	var bestTier int
-	var bestChanged, bestCreated time.Time
+	var bestDate, bestCreated time.Time
 	for i, p := range c.playlists {
 		if p.Owner != c.user {
 			continue
@@ -510,17 +512,27 @@ func (c *Client) findByMarker(kind, slot, name string) int {
 		if p.Name == name {
 			tier = 1
 		}
-		changed, created := parseTime(p.Changed), parseTime(p.Created)
+		date, _ := time.Parse("2006-01-02", meta.Date)
+		created := parseTime(p.Created)
 		// Strictly better wins, so on a full tie the first listed is kept and
 		// the answer does not depend on anything but the server's order.
 		better := best < 0 || tier < bestTier ||
-			(tier == bestTier && (changed.After(bestChanged) ||
-				(changed.Equal(bestChanged) && created.After(bestCreated))))
+			(tier == bestTier && (date.After(bestDate) ||
+				(date.Equal(bestDate) && olderCreation(created, bestCreated))))
 		if better {
-			best, bestTier, bestChanged, bestCreated = i, tier, changed, created
+			best, bestTier, bestDate, bestCreated = i, tier, date, created
 		}
 	}
 	return best
+}
+
+// olderCreation reports whether a was created before b. A playlist whose
+// creation time is unknown never wins this comparison.
+func olderCreation(a, b time.Time) bool {
+	if a.IsZero() {
+		return false
+	}
+	return b.IsZero() || a.Before(b)
 }
 
 // FindControl picks THIS user's control mailbox out of what the server

@@ -40,29 +40,44 @@ func TestDoesNotAdoptAPlaylistMarkedAsAnotherMix(t *testing.T) {
 }
 
 func TestRanksPlaylistsThatCarryTheSameMarker(t *testing.T) {
-	m := marker("loved", "loved")
+	old, mid, new := markerOn("loved", "loved", "2026-01-01"), markerOn("loved", "loved", "2026-02-01"), markerOn("loved", "loved", "2026-03-01")
 	cases := []struct {
 		name  string
 		lists []Playlist
 		want  string
 	}{
-		{"wanted name beats a newer copy", []Playlist{
-			{ID: "copy", Name: "My copy", Comment: m, Changed: "2026-05-01T10:00:00Z"},
-			{ID: "real", Name: "Wanted", Comment: m, Changed: "2026-01-01T10:00:00Z"},
+		{"the wanted name beats a copy with a newer marker", []Playlist{
+			{ID: "copy", Name: "My copy", Comment: new},
+			{ID: "real", Name: "Wanted", Comment: old},
 		}, "real"},
-		{"most recently changed", []Playlist{
-			{ID: "a", Name: "A", Comment: m, Changed: "2026-01-01T00:00:00Z"},
-			{ID: "b", Name: "B", Comment: m, Changed: "2026-03-01T00:00:00Z"},
-			{ID: "c", Name: "C", Comment: m, Changed: "2026-02-01T00:00:00Z"},
+		{"the newest marker date wins", []Playlist{
+			{ID: "a", Name: "A", Comment: old},
+			{ID: "b", Name: "B", Comment: new},
+			{ID: "c", Name: "C", Comment: mid},
 		}, "b"},
-		{"then most recently created", []Playlist{
-			{ID: "a", Name: "A", Comment: m, Changed: "2026-02-01T00:00:00Z", Created: "2026-01-01T00:00:00Z"},
-			{ID: "b", Name: "B", Comment: m, Changed: "2026-02-01T00:00:00Z", Created: "2026-01-05T00:00:00Z"},
+		{"then the oldest creation time", []Playlist{
+			{ID: "copy", Name: "B", Comment: mid, Created: "2026-01-05T00:00:00Z"},
+			{ID: "real", Name: "A", Comment: mid, Created: "2026-01-01T00:00:00Z"},
+		}, "real"},
+		{"a known creation time beats an unknown one", []Playlist{
+			{ID: "a", Name: "A", Comment: mid},
+			{ID: "b", Name: "B", Comment: mid, Created: "2026-01-05T00:00:00Z"},
 		}, "b"},
-		{"then first listed", []Playlist{
-			{ID: "a", Name: "A", Comment: m},
-			{ID: "b", Name: "B", Comment: m},
+		{"then the first listed", []Playlist{
+			{ID: "a", Name: "A", Comment: mid},
+			{ID: "b", Name: "B", Comment: mid},
 		}, "a"},
+		// The case from the review of the pull request: the user copies a mix,
+		// the copy keeps the description, the prefix changes so neither has the
+		// wanted name, and the copy is the playlist that was touched last.
+		{"a copy that keeps the description does not take over the mix", []Playlist{
+			{ID: "copy", Name: "My copy", Comment: old, Created: "2026-02-10T00:00:00Z"},
+			{ID: "real", Name: "Old Artist Radio 1", Comment: new, Created: "2026-01-01T00:00:00Z"},
+		}, "real"},
+		{"a copy made on the same day still loses to the original", []Playlist{
+			{ID: "copy", Name: "My copy", Comment: mid, Created: "2026-02-01T12:00:00Z"},
+			{ID: "real", Name: "Old Artist Radio 1", Comment: mid, Created: "2026-01-01T00:00:00Z"},
+		}, "real"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

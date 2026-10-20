@@ -170,7 +170,8 @@ If you change the prefix, the playlist is renamed in place (same id), so you do
 not get a second set next to the first. A mix you rename by hand is renamed back
 on the next run, so copy a playlist instead of renaming it. Older playlists
 without a marker are adopted by their exact name. Only your own playlists are
-looked at, and nothing is ever deleted.
+looked at, and nothing is ever deleted. If you copy a mix and the copy keeps the
+description, the original is still the one that is updated, not the copy.
 
 ## Configuration
 
