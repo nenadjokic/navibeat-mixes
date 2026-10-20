@@ -152,6 +152,10 @@ type Playlist struct {
 	Comment   string `json:"comment"`
 	Owner     string `json:"owner"`
 	SongCount int    `json:"songCount"`
+	// Created is the timestamp getPlaylists sends (Navidrome's buildPlaylist
+	// fills it). It picks the survivor when two playlists claim the same mix
+	// and carry the same marker date, see findByMarker.
+	Created string `json:"created"`
 }
 
 func (c *Client) do(endpoint string, params url.Values) (*envelope, error) {
@@ -343,18 +347,32 @@ func (c *Client) Playlists() ([]Playlist, error) {
 // Mixes are per user by design, so two people are supposed to end up with two
 // playlists of the same name. Only the owner may be handed back their own.
 func (c *Client) EnsurePlaylist(name string) (string, error) {
-	if c.playlists == nil {
-		existing, err := c.Playlists()
-		if err != nil {
-			return "", err
-		}
-		c.playlists = existing
+	if err := c.load(); err != nil {
+		return "", err
 	}
 	for _, p := range c.playlists {
 		if p.Name == name && p.Owner == c.user {
 			return p.ID, nil
 		}
 	}
+	return c.create(name)
+}
+
+// load fetches getPlaylists once per client and keeps it.
+func (c *Client) load() error {
+	if c.playlists != nil {
+		return nil
+	}
+	existing, err := c.Playlists()
+	if err != nil {
+		return err
+	}
+	c.playlists = existing
+	return nil
+}
+
+// create makes a new, non-public playlist and records it in the cache.
+func (c *Client) create(name string) (string, error) {
 	// Created non-public: these are personal mixes, and a server with five
 	// accounts should not show everyone five copies of "Morning".
 	env, err := c.do("createPlaylist", url.Values{"name": {name}})
@@ -382,6 +400,139 @@ func (c *Client) EnsurePlaylist(name string) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+// EnsureMix finds this user's playlist for one mix and makes sure it carries
+// the given name, or creates it. The mix is identified by (kind, slot), the
+// pair in the machine line of the description, and NOT by its name.
+//
+// WHY: the name used to be the only key. Changing the prefix therefore
+// stopped the old playlist being found and a second one was created next to
+// it, orphaning the first. A playlist's id and its marker survive a rename, so
+// they are what a mix is looked up by now.
+//
+// Order of lookup, all of it among THIS user's playlists only:
+//
+//  1. The marker, ranked (see findByMarker). Others carrying the same marker
+//     (a copy the user made, a duplicate) are left exactly as they are: this
+//     plugin never deletes, and they are not ours to judge.
+//  2. Adoption of a playlist with NO marker, for playlists written before the
+//     marker was trusted as identity: one whose name equals the wanted name
+//     exactly, as EnsurePlaylist always did. A playlist whose marker names a
+//     DIFFERENT mix is never adopted: it has an identity, and taking it would
+//     steal it from its own slot.
+//  3. Nothing found: create it. created is then true.
+//
+// When the stored name is not the wanted name the playlist is renamed in
+// place (updatePlaylist, parameter name), so the id never changes. A mix the
+// user renamed by hand is renamed back the same way. A failed rename is logged
+// and does not fail the write: the tracks and description still go in and the
+// old name stays until the next run. If another of this user's playlists
+// already has the target name the rename still happens (Navidrome allows
+// duplicate names) but one line names both ids.
+//
+// ⛔ THE OWNER CHECK IS LOAD BEARING, exactly as in EnsurePlaylist and
+// FindControl: an admin's getPlaylists holds every user's playlists, and a
+// marker is identical across users. Matching without the owner would rename
+// and overwrite somebody else's mix.
+func (c *Client) EnsureMix(kind, slot, name string) (id string, created bool, err error) {
+	if err := c.load(); err != nil {
+		return "", false, err
+	}
+	idx := c.findByMarker(kind, slot, name)
+	if idx < 0 {
+		idx = c.findToAdopt(kind, slot, name)
+	}
+	if idx < 0 {
+		id, err := c.create(name)
+		return id, err == nil, err
+	}
+	p := c.playlists[idx]
+	if p.Name != name {
+		for _, o := range c.playlists {
+			if o.Owner == c.user && o.ID != p.ID && o.Name == name {
+				logf("renaming playlist %s to %q, which playlist %s already has", p.ID, name, o.ID)
+				break
+			}
+		}
+		if _, err := c.do("updatePlaylist", url.Values{
+			"playlistId": {p.ID}, "name": {name},
+		}); err != nil {
+			logf("could not rename %q to %q: %v", p.Name, name, err)
+		} else {
+			c.playlists[idx].Name = name
+		}
+	}
+	return p.ID, false, nil
+}
+
+// findToAdopt returns the index of an unmarked playlist of this user whose
+// name equals the wanted name, or -1. See step 2 of EnsureMix. A playlist that
+// carries the marker of another mix is skipped.
+func (c *Client) findToAdopt(kind, slot, name string) int {
+	for i, p := range c.playlists {
+		if p.Owner != c.user || p.Name != name {
+			continue
+		}
+		if meta, ok := protocol.Parse(p.Comment); ok && (meta.Kind != kind || meta.Slot != slot) {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+// findByMarker returns the index in c.playlists of this user's playlist for
+// (kind, slot), or -1. When several carry the marker (a copy the user made
+// keeps the description, and so the marker, too) they are ranked:
+//
+//  1. its name equals the wanted name,
+//  2. otherwise the newest marker date, then the oldest creation time, then the
+//     first listed.
+//
+// Within a tier the same order breaks ties. The marker date is rewritten on
+// every run, so the real mix always carries a date at least as new as any copy
+// of it, and a copy is always created after the playlist it was copied from.
+// Recency of editing is deliberately not used: a copy the user is working on is
+// the most recently changed playlist, and after a prefix change neither has the
+// wanted name, so it would take over the mix.
+func (c *Client) findByMarker(kind, slot, name string) int {
+	best := -1
+	var bestTier int
+	var bestDate, bestCreated time.Time
+	for i, p := range c.playlists {
+		if p.Owner != c.user {
+			continue
+		}
+		meta, ok := protocol.Parse(p.Comment)
+		if !ok || meta.Kind != kind || meta.Slot != slot {
+			continue
+		}
+		tier := 2
+		if p.Name == name {
+			tier = 1
+		}
+		date, _ := time.Parse("2006-01-02", meta.Date)
+		created := parseTime(p.Created)
+		// Strictly better wins, so on a full tie the first listed is kept and
+		// the answer does not depend on anything but the server's order.
+		better := best < 0 || tier < bestTier ||
+			(tier == bestTier && (date.After(bestDate) ||
+				(date.Equal(bestDate) && olderCreation(created, bestCreated))))
+		if better {
+			best, bestTier, bestDate, bestCreated = i, tier, date, created
+		}
+	}
+	return best
+}
+
+// olderCreation reports whether a was created before b. A playlist whose
+// creation time is unknown never wins this comparison.
+func olderCreation(a, b time.Time) bool {
+	if a.IsZero() {
+		return false
+	}
+	return b.IsZero() || a.Before(b)
 }
 
 // FindControl picks THIS user's control mailbox out of what the server
@@ -445,6 +596,44 @@ func logf(format string, args ...any) {
 	}
 }
 
+// WriteMix writes the tracks and the description (which holds the marker) of
+// a mix whose playlist EnsureMix returned.
+//
+// ORDER DEPENDS ON created, and that is the point of the flag. The marker is
+// how a mix is found again, and the description is the only place it lives. A
+// playlist that was just created has no marker yet, so if the run stopped after
+// the tracks but before the description, a later run that no longer sees the
+// same name (a changed prefix) would create a SECOND playlist and the first
+// would be orphaned for good. So for a created
+// playlist the description goes in FIRST (createPlaylist with playlistId, used
+// by ReplaceTracks, keeps the stored comment), and if it cannot be written
+// the error is returned so the caller treats the slot as failed and retries.
+// One immediate retry covers a transient failure without a second pass.
+//
+// An existing playlist already has its marker, so there the order stays
+// tracks first, then description, and a description that fails to write is
+// only logged: rewriting the same tracks next pass to fix a sentence costs
+// more than the stale sentence is worth.
+func (c *Client) WriteMix(id string, created bool, trackIDs []string, comment string) error {
+	if created {
+		err := c.SetComment(id, comment)
+		if err != nil {
+			err = c.SetComment(id, comment)
+		}
+		if err != nil {
+			return fmt.Errorf("writing description of new playlist %s: %w", id, err)
+		}
+		return c.ReplaceTracks(id, trackIDs)
+	}
+	if err := c.ReplaceTracks(id, trackIDs); err != nil {
+		return err
+	}
+	if err := c.SetComment(id, comment); err != nil {
+		logf("writing description of %s: %v", id, err)
+	}
+	return nil
+}
+
 // ReplaceTracks sets a playlist's contents to exactly the given ids.
 //
 // It uses createPlaylist with playlistId, which Navidrome treats as "replace
@@ -462,7 +651,7 @@ func logf(format string, args ...any) {
 // rewrite, and more of them piled up each night.
 //
 // The server checks that the caller owns the playlist (or is an admin) and
-// refuses a smart or synced playlist. EnsurePlaylist only hands back
+// refuses a smart or synced playlist. EnsureMix and EnsurePlaylist only hand back
 // playlists owned by this client's user, so the first holds. An empty list is
 // never sent: Navidrome's Put skips the track rewrite when there are no tracks,
 // so it would leave the old contents in place, and writeNamed already refuses
@@ -484,6 +673,15 @@ func (c *Client) SetComment(playlistID, comment string) error {
 	_, err := c.do("updatePlaylist", url.Values{
 		"playlistId": {playlistID}, "comment": {comment},
 	})
+	if err == nil {
+		// Keep the cache honest: the marker just written is what EnsureMix
+		// looks a mix up by.
+		for i := range c.playlists {
+			if c.playlists[i].ID == playlistID {
+				c.playlists[i].Comment = comment
+			}
+		}
+	}
 	return err
 }
 

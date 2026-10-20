@@ -59,7 +59,7 @@ instead of the same top five forever.
 
 The playlist you pinned is still that playlist. Only what is inside it changed.
 
-### Playlist names never change
+### Playlist names do not follow the content
 
 This matters more than it sounds. A playlist called "Artist Radio 1: LINKIN
 PARK" gets a new name the day your listening shifts, which creates a **new**
@@ -162,6 +162,16 @@ Your mixes appear within a minute of enabling it, and refresh at 04:00 daily.
 > **To watch a run happen**, set `Plugins.LogLevel = "debug"` in
 > `navidrome.toml` and filter the log for `plugin=navibeat-mixes`. Every run
 > says what it did, including when it found nothing to work with.
+
+## Stable identity
+
+Playlists are found by the marker line in their description, not by their name.
+If you change the prefix, the playlist is renamed in place (same id), so you do
+not get a second set next to the first. A mix you rename by hand is renamed back
+on the next run, so copy a playlist instead of renaming it. Older playlists
+without a marker are adopted by their exact name. Only your own playlists are
+looked at, and nothing is ever deleted. If you copy a mix and the copy keeps the
+description, the original is still the one that is updated, not the copy.
 
 ## Configuration
 

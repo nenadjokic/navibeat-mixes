@@ -32,6 +32,7 @@ import (
 	"github.com/nenadjokic/navibeat-mixes/internal/config"
 	"github.com/nenadjokic/navibeat-mixes/internal/library"
 	"github.com/nenadjokic/navibeat-mixes/internal/mixes"
+	"github.com/nenadjokic/navibeat-mixes/internal/naming"
 	"github.com/nenadjokic/navibeat-mixes/internal/protocol"
 	"github.com/nenadjokic/navibeat-mixes/internal/resume"
 )
@@ -561,7 +562,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	// fill a mix must not be given a number it will then fail to use.
 	for i, g := range mixes.Rotate(mixes.TopGenresOwning(tracks, 12, minMixSize, cfg.MaxPerArtist), week, 3) {
 		add("genreradio", "Genre Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.GenreRadio, i+1),
-			"NaviBeat Mixes: "+g+", one of the genres you play most. A different genre each week.", "genreradio",
+			naming.Sentence("genreradio", g), "genreradio",
 			mixes.BuildForGenre(tracks, g, cfg.MixSize, cfg.MaxPerArtist))
 	}
 	// The 20 are the artists that can actually FILL an Artist Radio: an artist
@@ -573,12 +574,12 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	artists := mixes.Rotate(mixes.TopArtistsOwning(tracks, 20, minMixSize), week, 5)
 	for i, a := range artists {
 		add("artistradio", "Artist Radio "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.ArtistRadio, i+1),
-			"NaviBeat Mixes: everything you have by "+a+". A different artist each week.", "artistradio",
+			naming.Sentence("artistradio", a), "artistradio",
 			mixes.BuildForArtist(tracks, a, cfg.MixSize))
 	}
 	for i := 0; i < 3 && i < len(artists); i++ {
 		add("dailymix", "Daily Mix "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.DailyMix, i+1),
-			"NaviBeat Mixes: built around "+artists[i]+" and what sits near it. Rotates weekly.", "dailymix",
+			naming.Sentence("dailymix", artists[i]), "dailymix",
 			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, cfg.MaxPerArtist))
 	}
 	// Same floor and same reason as the genre and artist pools: a decade that
@@ -586,7 +587,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	for _, d := range mixes.Rotate(mixes.TopDecadesOwning(tracks, 6, minMixSize, cfg.MaxPerArtist), week, 2) {
 		label := strconv.Itoa(d) + "s"
 		add("decade", label, "decade-"+strconv.Itoa(d),
-			"NaviBeat Mixes: your "+label+", ranked by what you actually play. Rotates weekly.", "decade",
+			naming.Sentence("decade", label), "decade",
 			mixes.BuildForDecade(tracks, d, cfg.MixSize, cfg.MaxPerArtist))
 	}
 
@@ -768,14 +769,11 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 			username, name, len(sel.TrackIDs), minMixSize)
 		return writeTooSmall
 	}
-	id, err := client.EnsurePlaylist(name)
+	// Found by the (kind, slot) marker, not by name, so a changed prefix
+	// renames the playlist in place instead of creating a second one beside it.
+	id, created, err := client.EnsureMix(kind, string(sel.Slot), name)
 	if err != nil {
 		logf("user %s: %v", username, err)
-		return writeFailed
-	}
-
-	if err := client.ReplaceTracks(id, sel.TrackIDs); err != nil {
-		logf("user %s: writing tracks: %v", username, err)
 		return writeFailed
 	}
 
@@ -825,11 +823,12 @@ func writeNamed(client *library.Client, cfg config.Config, name string, sel mixe
 			Glyph: icon, Color: colour, Label: label,
 		}))
 	}
-	if err := client.SetComment(id, comment); err != nil {
-		// The tracks are already in the playlist, so this IS a write. Failing
-		// the slot here would rewrite the same tracks on the next pass to fix
-		// a description, which costs more than the missing line is worth.
-		logf("user %s: writing description: %v", username, err)
+	// WriteMix puts the description (the marker) before the tracks for a
+	// playlist that was just created, and fails the slot if it cannot, so a
+	// retry finds this playlist instead of creating a second one.
+	if err := client.WriteMix(id, created, sel.TrackIDs, comment); err != nil {
+		logf("user %s: writing %s: %v", username, name, err)
+		return writeFailed
 	}
 	return writeOK
 }
