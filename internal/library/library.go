@@ -423,8 +423,9 @@ func (c *Client) create(name string) (string, error) {
 //  2. Adoption of a playlist with NO marker, for playlists written before the
 //     marker was trusted as identity. It is adopted only if it plausibly came
 //     from this plugin: it is called legacy, or it is called name and its
-//     description carries protocol.Attribution. A hand made "Punk Radio" with
-//     no such trace is NOT adopted, because rendering a template can produce
+//     description carries protocol.Attribution, or it is called name and is
+//     empty with no description (what a failed first write leaves behind, see
+//     leftEmpty). A hand made "Punk Radio" with no such trace is NOT adopted, because rendering a template can produce
 //     any name and overwriting somebody's own playlist is not recoverable.
 //     A playlist whose marker names a DIFFERENT mix is never adopted: it has
 //     an identity, and taking it would steal it from its own slot.
@@ -484,7 +485,7 @@ func (c *Client) findToAdopt(kind, slot, name, legacy string) int {
 			if meta, ok := protocol.Parse(p.Comment); ok && (meta.Kind != kind || meta.Slot != slot) {
 				continue
 			}
-			if needTrace && !strings.Contains(p.Comment, protocol.Attribution) {
+			if needTrace && !strings.Contains(p.Comment, protocol.Attribution) && !leftEmpty(p) {
 				continue
 			}
 			return i
@@ -498,6 +499,19 @@ func (c *Client) findToAdopt(kind, slot, name, legacy string) int {
 		return pick(legacy, false)
 	}
 	return -1
+}
+
+// leftEmpty reports whether a playlist looks like the one a failed first write
+// leaves behind: no tracks and no description at all.
+//
+// WHY: for a new playlist the description, which holds the marker, is written
+// before the tracks (see WriteMix). When that write fails the slot fails and
+// the playlist stays empty and unmarked. With a name template it also lacks the
+// attribution line, so without this the retry would create a second playlist
+// next to the empty one. Adopting it is safe because there is nothing in it to
+// overwrite; the owner and exact name checks in findToAdopt still apply.
+func leftEmpty(p Playlist) bool {
+	return p.SongCount == 0 && strings.TrimSpace(p.Comment) == ""
 }
 
 // findByMarker returns the index in c.playlists of this user's playlist for

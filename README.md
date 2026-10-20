@@ -193,7 +193,7 @@ one placeholder, `{subject}`:
   template is taken, that mix falls back to its numbered default, then `(2)`, `(3)`.
 - Daily Mix has no name setting.
 - With a name set, older playlists are adopted only if they look like ours: the old default name,
-  or the new name plus the "Made by NaviBeat" line.
+  or the new name plus the "Made by NaviBeat" line, or the new name on an empty playlist with no description.
 
 ## Configuration
 

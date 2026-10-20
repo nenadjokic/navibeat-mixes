@@ -30,8 +30,8 @@ func (s *fakeNavidrome) call(uri string) (string, error) {
 		s.listCalls++
 		var items []string
 		for _, l := range s.lists {
-			items = append(items, fmt.Sprintf(`{"id":%q,"name":%q,"comment":%q,"owner":%q,"created":%q}`,
-				l.ID, l.Name, l.Comment, l.Owner, l.Created))
+			items = append(items, fmt.Sprintf(`{"id":%q,"name":%q,"comment":%q,"owner":%q,"created":%q,"songCount":%d}`,
+				l.ID, l.Name, l.Comment, l.Owner, l.Created, l.SongCount))
 		}
 		return `{"subsonic-response":{"status":"ok","playlists":{"playlist":[` + strings.Join(items, ",") + `]}}}`, nil
 	case endpoint == "createPlaylist" && p.Get("playlistId") != "":

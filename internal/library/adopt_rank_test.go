@@ -125,7 +125,10 @@ func TestAdoptsAnUnmarkedPlaylistOnlyIfItLooksLikeOursWhenTheNameIsTemplated(t *
 	}{
 		{"the legacy default name", "Genre Radio 1", "hand typed", true},
 		{"the new name with our attribution", "Punk Radio", "a sentence\n" + protocol.Attribution, true},
-		{"the new name only, no description", "Punk Radio", "", false},
+		// An empty playlist with no description is what a failed first write
+		// leaves behind, so it is adopted (see leftEmpty). There is nothing in
+		// it to overwrite.
+		{"the new name only, empty and no description", "Punk Radio", "", true},
 		{"the new name only, own description", "Punk Radio", "my favourite punk songs", false},
 	}
 	for _, c := range cases {
