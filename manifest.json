@@ -133,6 +133,24 @@
           "title": "Name: Rediscover",
           "default": "Rediscover"
         },
+        "nameArtistRadio": {
+          "type": "string",
+          "title": "Name: Artist Radio",
+          "default": "",
+          "description": "Use {subject} for the artist, for example \"Radio: {subject}\". Leave empty for \"Artist Radio 1\"."
+        },
+        "nameGenreRadio": {
+          "type": "string",
+          "title": "Name: Genre Radio",
+          "default": "",
+          "description": "Use {subject} for the genre, for example \"{subject} Mix\". Leave empty for \"Genre Radio 1\"."
+        },
+        "nameDecade": {
+          "type": "string",
+          "title": "Name: Decade",
+          "default": "",
+          "description": "Use {subject} for the decade, for example \"{subject} Hits\". Leave empty for \"1990s\"."
+        },
         "genreDenylist": {
           "type": "string",
           "title": "Genres to ignore",
@@ -786,6 +804,18 @@
             {
               "type": "Control",
               "scope": "#/properties/nameRediscover"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/nameArtistRadio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/nameGenreRadio"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/nameDecade"
             }
           ]
         },

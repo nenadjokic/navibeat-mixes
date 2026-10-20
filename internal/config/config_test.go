@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func getterFrom(m map[string]string) Getter {
 	return func(k string) string { return m[k] }
@@ -370,5 +373,35 @@ func TestBudgetSecondsIsClampedUnderTheHostDeadline(t *testing.T) {
 		if got != want {
 			t.Errorf("budgetSeconds=%q -> %d, want %d", raw, got, want)
 		}
+	}
+}
+
+func TestNameTemplatesAreReadTrimmedAndGetThePrefixAfterRendering(t *testing.T) {
+	c := Load(getterFrom(map[string]string{
+		"nameArtistRadio": "This is {subject}",
+		"nameGenreRadio":  "  {subject} Radio ",
+		"nameDecade":      "{subject}",
+		"prefix":          "P",
+	}))
+	cases := []struct{ kind, subject, def, want string }{
+		{"artistradio", "Billy Talent", "Artist Radio 1", "P This is Billy Talent"},
+		{"genreradio", "Punk", "Genre Radio 1", "P Punk Radio"},
+		{"dailymix", "Billy Talent", "Daily Mix 1", "P Daily Mix 1"}, // no setting for this kind
+		// The prefix is not part of the 100 character cut.
+		{"decade", strings.Repeat("x", 150), "d", "P " + strings.Repeat("x", 100)},
+	}
+	for _, tc := range cases {
+		if got := c.SubjectName(tc.kind, tc.subject, tc.def); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.kind, got, tc.want)
+		}
+	}
+}
+
+func TestDefaultsHaveNoNameTemplates(t *testing.T) {
+	if n := len(Defaults().NameTemplates); n != 0 {
+		t.Errorf("%d templates set by default", n)
+	}
+	if got := Load(getterFrom(nil)).SubjectName("artistradio", "X", "Artist Radio 1"); got != Defaults().Prefix+"Artist Radio 1" {
+		t.Errorf("default name changed: %q", got)
 	}
 }
