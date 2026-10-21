@@ -141,9 +141,13 @@ type OnRepeatInput struct {
 const onRepeatClassicDescription = "NaviBeat Mixes: what you have been playing over and over lately."
 
 // OnRepeatAllTimeDescription is said when the history was asked for and could
-// not be read, so the mix fell back to the lifetime play count. It names the
-// version because the history service exists only from Navidrome 0.64.0.
-const OnRepeatAllTimeDescription = "NaviBeat Mixes: what you have been playing lately, ranked by all-time plays because this server's play history could not be read (it needs Navidrome 0.64 or newer)."
+// not be read, so the mix fell back to the lifetime play count.
+//
+// It does NOT say "your server is older than 0.64", although that was the
+// first idea: a build that asks for the history cannot even load on a server
+// older than 0.64.0 (history_none.go explains why), so whoever reads this
+// description is on 0.64 or newer and the read failed for another reason.
+const OnRepeatAllTimeDescription = "NaviBeat Mixes: what you have been playing lately, ranked by all-time plays because the server's play history could not be read on this run."
 
 func onRepeatHistoryDescription(window time.Duration) string {
 	days := int(window / (24 * time.Hour))

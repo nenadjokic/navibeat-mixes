@@ -25,8 +25,10 @@ import (
 func readPlayHistory(username string, now time.Time, window time.Duration) *mixes.PlayHistory {
 	from := now.Add(-window).Unix()
 	to := now.Unix()
-	// Both ends inclusive (plugins/host/scrobble_retriever.go). MaxItems 5000
-	// is the host's ceiling and its default.
+	// Unix SECONDS, both ends inclusive: Navidrome stores submission_time as
+	// time.Unix() (persistence/scrobble_repository.go) and filters with >= and
+	// <= (plugins/host_scrobbleretriever.go, scrobbleRangeFilters). MaxItems
+	// 5000 is the host's ceiling and its default.
 	opts := host.ScrobbleOptions{FromTimestamp: &from, ToTimestamp: &to, MaxItems: 5000}
 	plays, err := history.Collect(func() ([]mixes.Play, bool, error) {
 		refs, next, err := host.ScrobbleRetrieverGetScrobbles(username, opts)
