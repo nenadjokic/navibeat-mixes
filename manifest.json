@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.9.19",
+  "version": "0.9.20",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -23,6 +23,9 @@
       "requiredHosts": [
         "navibeat.app"
       ]
+    },
+    "scrobbleRetriever": {
+      "reason": "Used only by On Repeat, to count how many times you played each song in the last 30 days from Navidrome's own play history. Stays on your server."
     }
   },
   "config": {

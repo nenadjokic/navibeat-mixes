@@ -3,7 +3,25 @@
 # TinyGo is preferred because it produces a much smaller binary, but plain Go
 # works: Navidrome's own example Makefile supports both, and the WASM ABI is
 # the same either way. See README for the measured size difference.
+#
+# TWO DOWNLOADS FROM ONE SOURCE (0.9.20 on):
+#
+#   navibeat-mixes.ndp                  default build, Navidrome 0.63.1 and newer
+#   navibeat-mixes-navidrome-0.64.ndp   built with -tags scrobbles, 0.64.0 and newer
+#
+# They cannot be one file. The 0.64 build imports scrobbleretriever_getscrobbles,
+# and a server older than 0.64.0 has no such host function, so it refuses to load
+# the plugin at all (see history_none.go). The default asset keeps its old name so
+# every existing "latest release" link and dev/up.sh keep working.
+#
+# ⛔ THE FILE NAME IS THE PLUGIN'S IDENTITY in Navidrome (plugins/package.go,
+# pluginIDFromPath; manager_sync.go on 0.63.2), and its settings row and its KV
+# store directory (host_kvstore.go, DataFolder/plugins/<name>) hang off it. The
+# 0.64 asset needs a different name only because one release cannot carry two
+# assets of the same name. A user must install it AS navibeat-mixes.ndp, or it
+# is a second plugin with an empty listening clock. Say so in every release note.
 NDP    := navibeat-mixes.ndp
+NDP64  := navibeat-mixes-navidrome-0.64.ndp
 TINYGO := $(shell command -v tinygo 2> /dev/null)
 # The ONE source of truth for the version. Navidrome shows this string in its
 # Plugins list, so it is what a user reads back to you in a bug report.
@@ -11,18 +29,45 @@ VERSION := $(shell python3 -c "import json;print(json.load(open('manifest.json')
 
 .PHONY: all test clean check-emdash check-version release-tag
 
-all: $(NDP)
+all: $(NDP) $(NDP64)
 
-plugin.wasm: main.go $(wildcard internal/*/*.go) go.mod
+SOURCES := main.go $(wildcard *.go) $(wildcard internal/*/*.go) go.mod
+
+plugin.wasm: $(SOURCES)
 ifdef TINYGO
 	tinygo build -target wasip1 -buildmode=c-shared -o $@ .
 else
 	GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o $@ .
 endif
 
-$(NDP): plugin.wasm manifest.json
+# The 0.64 wasm, with the scrobble history read compiled in (history_scrobbles.go).
+build/navidrome-0.64/plugin.wasm: $(SOURCES)
+	@mkdir -p $(dir $@)
+ifdef TINYGO
+	tinygo build -tags scrobbles -target wasip1 -buildmode=c-shared -o $@ .
+else
+	GOOS=wasip1 GOARCH=wasm go build -tags scrobbles -buildmode=c-shared -o $@ .
+endif
+
+# manifest.json in the repo is the 0.64 manifest: it declares scrobbleRetriever,
+# which the 0.64 build needs, because Navidrome 0.64 registers the scrobble host
+# functions only for a plugin that declares it (plugins/manager_loader.go).
+#
+# The default package gets a copy WITHOUT that permission. Declaring it would not
+# break anything (0.63.x drops the unknown key, 0.64 accepts it), but on a 0.64
+# server it would show the admin a permission whose reason describes a read the
+# default build never makes, and hand the plugin a host service it never calls.
+build/default/manifest.json: manifest.json
+	@mkdir -p $(dir $@)
+	python3 -c "import json,sys;m=json.load(open('manifest.json'));m['permissions'].pop('scrobbleRetriever',None);json.dump(m,open(sys.argv[1],'w'),ensure_ascii=False,indent=2)" $@
+
+$(NDP): plugin.wasm build/default/manifest.json
 	@rm -f $@
-	zip -j $@ manifest.json plugin.wasm
+	zip -j $@ build/default/manifest.json plugin.wasm
+
+$(NDP64): build/navidrome-0.64/plugin.wasm manifest.json
+	@rm -f $@
+	zip -j $@ manifest.json build/navidrome-0.64/plugin.wasm
 
 # Unit tests run natively. The PDK ships stub implementations behind
 # `//go:build !wasip1` precisely so plugin logic stays testable off-target.
@@ -71,9 +116,10 @@ check-version:
 # Tag from the manifest rather than by hand, so they cannot disagree again.
 # Pushing the tag and cutting the release stay manual on purpose: publishing is
 # a decision, not a build step.
-release-tag: check-version test check-emdash $(NDP)
+release-tag: check-version test check-emdash $(NDP) $(NDP64)
 	git tag "v$(VERSION)"
-	@echo "tagged v$(VERSION). Now: git push origin v$(VERSION) && gh release create v$(VERSION) $(NDP)"
+	@echo "tagged v$(VERSION). Now: git push origin v$(VERSION) && gh release create v$(VERSION) $(NDP) $(NDP64)"
+	@echo "Release notes must say: on 0.64 rename $(NDP64) to $(NDP) in the plugins folder."
 
 clean:
-	rm -f plugin.wasm $(NDP)
+	rm -rf plugin.wasm build $(NDP) $(NDP64)

@@ -1,6 +1,7 @@
 # Build output
 plugin.wasm
 *.ndp
+build/
 
 # Scratch Navidrome instance and sample library, never committed
 dev/data/

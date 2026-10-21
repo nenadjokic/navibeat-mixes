@@ -83,15 +83,14 @@ chose. The Subsonic API exposes only a track's *last* play, never the
 individual plays, so there is no way to ask a server what you listen to at
 08:00. The plugin has to watch plays go past and build that picture itself.
 
-**Navidrome's own listen history cannot shorten that wait yet.** Navidrome
-0.59.0 and newer records every play in its own scrobbles table, but through
-0.63.2 nothing exposes that table: not the Subsonic API, not the native API,
-and not the services a plugin can call, so the plugin has no way to read it and
-the same plays are remembered twice, once by Navidrome and once here. A host
-service that hands a plugin exactly that history was merged into Navidrome's
-development branch on 2026-08-09 (navidrome/navidrome PR #5795) and is in no
-release yet; the first NaviBeat Mixes release after a Navidrome release ships
-it will read the history from the server and start personal on day one.
+**Navidrome 0.64.0 hands the plugin its own play history.** Navidrome records
+every play in its scrobbles table, and from 0.64.0 a plugin can read that table
+through the ScrobbleRetriever host service. The Navidrome 0.64 download uses it
+for On Repeat, which then ranks by how many times you played each song in the
+last 30 days instead of by its all-time play count. The time-of-day mixes still
+learn on their own by watching plays go past, so they still need the wait below.
+On Navidrome 0.63.x, use the default download: a server older than 0.64.0 cannot
+load the 0.64 file at all (see [Which file do I download?](#which-file-do-i-download)).
 
 Until it has enough (150 plays by default), the mixes are built from your most
 played music instead, and **each playlist says so in its own description**:
@@ -121,12 +120,35 @@ and a test fails the build if any other field ever appears in that payload.
 ## Requirements
 
 - Navidrome **0.63.1 or newer**, with plugins enabled
+  (the `navibeat-mixes-navidrome-0.64.ndp` file needs **0.64.0 or newer**)
 - Nothing else
 
 ## Install
 
-1. Download `navibeat-mixes.ndp` from [the latest release](../../releases/latest).
-2. Drop it into your Navidrome plugins folder.
+### Which file do I download?
+
+Each release has two files. Pick the one for your Navidrome:
+
+| Your Navidrome | File | On Repeat counts |
+|---|---|---|
+| 0.63.1 to 0.63.x | `navibeat-mixes.ndp` | your all-time play count |
+| 0.64.0 or newer | `navibeat-mixes-navidrome-0.64.ndp` | your plays in the last 30 days |
+
+Everything else is the same in both. The 0.64 file does not load on 0.63.x,
+because it calls a host service older servers do not have. The default file
+works on 0.64 too, it just keeps the all-time count.
+
+**Whichever you pick, it goes into the plugins folder as `navibeat-mixes.ndp`.**
+Navidrome uses the file name as the plugin's identity, and keeps the plugin's
+settings and its listening history under that name. Save the 0.64 file under
+any other name and Navidrome treats it as a new plugin that starts over with no
+history and default settings, and with both files in the folder two copies
+build the same mixes. So rename `navibeat-mixes-navidrome-0.64.ndp` to
+`navibeat-mixes.ndp`, replacing the old file, and keep only one.
+
+1. Download the file for your Navidrome from [the latest release](../../releases/latest).
+2. Drop it into your Navidrome plugins folder as `navibeat-mixes.ndp`
+   (rename the 0.64 file, replace any older copy).
 3. Enable plugins in `navidrome.toml` if you have not already:
 
    ```toml
@@ -140,7 +162,7 @@ and a test fails the build if any other field ever appears in that payload.
 grants a plugin everything its manifest declares at the moment you enable it.
 The permission list on the plugin's page is there so you can read what it will
 be allowed to do before you switch it on: clicking one explains it, it does not
-toggle it. This plugin asks for four:
+toggle it. This plugin asks for five (six in the 0.64 file):
 
 | Permission | Why |
 |---|---|
@@ -148,6 +170,8 @@ toggle it. This plugin asks for four:
 | `subsonicapi` | To read your library and create the playlists |
 | `users` | Mixes are per user, and every Subsonic call needs a user |
 | `kvstore` | To remember when you listen to what |
+| `http` | Only if you switch on Wrapped sharing (off by default), and only to navibeat.app |
+| `scrobbleRetriever` | 0.64 file only: On Repeat counts your plays of the last 30 days from Navidrome's own play history |
 
 Your mixes appear within a minute of enabling it, and refresh at 04:00 daily.
 
@@ -339,7 +363,7 @@ files are never modified.
 ## Building from source
 
 ```bash
-make          # produces navibeat-mixes.ndp
+make          # produces navibeat-mixes.ndp and navibeat-mixes-navidrome-0.64.ndp
 make test     # unit tests, run natively
 ```
 
