@@ -34,8 +34,17 @@ test:
 	go test ./internal/...
 
 # Hard project rule: no em dash anywhere, including code and comments.
+#
+# Portable on purpose. The old line used `grep -P`, which macOS's BSD grep
+# rejects ("invalid option -- P", exit 2); with stderr discarded and the exit
+# negated, that error read as a pass, so the check passed on every Mac build
+# whatever the tree held (measured 2026-10-21 with a planted em dash). The
+# pattern is now the literal UTF-8 bytes, and any grep exit other than
+# 0 (found) or 1 (clean) fails the target instead of passing it.
 check-emdash:
-	@! grep -rnP '\x{2014}' --include='*' . 2>/dev/null || (echo "em dash found"; exit 1)
+	@out=$$(grep -rn --exclude-dir=.git "$$(printf '\342\200\224')" .); rc=$$?; \
+	if [ $$rc -eq 0 ]; then echo "$$out"; echo "em dash found"; exit 1; fi; \
+	if [ $$rc -ne 1 ]; then echo "em dash check could not run (grep exit $$rc)"; exit 1; fi
 	@echo "no em dash"
 
 # THE GUARD, and it exists because the two drifted for four releases.
