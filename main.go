@@ -556,9 +556,23 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		"NaviBeat Mixes: everything you starred, oldest favourite first.", "loved",
 		mixes.BuildLovedSongs(tracks, cfg.MixSize, cfg.MaxPerArtist))
 
-	add("onrepeat", "On Repeat", "onrepeat",
-		"NaviBeat Mixes: what you have been playing over and over lately.", "onrepeat",
-		mixes.BuildOnRepeat(tracks, now, 30*24*time.Hour, cfg.MixSize, cfg.MaxPerArtist))
+	// On Repeat ranks by plays inside the window when this build reads the
+	// server's own play history (history_scrobbles.go, Navidrome 0.64.0+),
+	// and by the lifetime play count otherwise. PlanOnRepeat picks the
+	// description that says which one happened. The history is read only
+	// when the mix is switched on, so a user who turned it off pays nothing.
+	onRepeatWindow := 30 * 24 * time.Hour
+	if cfg.MixEnabled("onrepeat") {
+		history := readPlayHistory(username, now, onRepeatWindow)
+		if history != nil && history.Err != nil {
+			logf("user %s: On Repeat could not read the play history, ranking by all-time plays: %v", username, history.Err)
+		}
+		onRepeatSel, onRepeatHuman := mixes.PlanOnRepeat(mixes.OnRepeatInput{
+			Tracks: tracks, Now: now, Window: onRepeatWindow,
+			Size: cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist, History: history,
+		})
+		add("onrepeat", "On Repeat", "onrepeat", onRepeatHuman, "onrepeat", onRepeatSel)
+	}
 
 	add("essentials", "Your Essentials", "essentials",
 		"NaviBeat Mixes: your most played of all time.", "essentials",

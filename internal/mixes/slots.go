@@ -85,6 +85,10 @@ type Track struct {
 	// released order reads as "unknown" and sorts behind every known date.
 	Released time.Time
 	Starred  bool
+	// Duration is the track's length, from Subsonic's `duration`. Zero when
+	// unknown. Only On Repeat reads it, to dedup the server's play history
+	// with the collector's max(60s, duration) rule.
+	Duration time.Duration
 }
 
 // AllGenres is every genre this track carries, trimmed and without blanks.

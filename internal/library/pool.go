@@ -81,6 +81,10 @@ type poolTrack struct {
 	// a later album pass only ever makes it more exact and never less.
 	Precision int  `json:"p,omitempty"`
 	Starred   bool `json:"st,omitempty"`
+	// Duration in seconds, 0 when unknown. A pool parked before this field
+	// existed decodes with 0, which the dedup rule reads as its 60 second
+	// floor, so PoolFormat did not need a bump.
+	Duration int `json:"du,omitempty"`
 }
 
 func unix(t time.Time) int64 {
@@ -112,6 +116,7 @@ func (p *Pool) Tracks() []mixes.Track {
 			Added:      fromUnix(t.Added),
 			Released:   fromUnix(t.Released),
 			Starred:    t.Starred,
+			Duration:   time.Duration(t.Duration) * time.Second,
 		})
 	}
 	return out
@@ -306,6 +311,7 @@ func (c *Client) Assemble(opts CandidateOptions, p *Pool, pace Pacer) (*Pool, er
 				Released:   unix(released),
 				Precision:  exact,
 				Starred:    s.Starred != "",
+				Duration:   s.Duration,
 			})
 		}
 	}

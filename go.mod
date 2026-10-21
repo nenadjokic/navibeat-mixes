@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/extism/go-pdk v1.1.3
-	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260709103044-052f10fd6898
+	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260923224211-101145742f47
 )
 
 require (
