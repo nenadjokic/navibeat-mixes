@@ -208,7 +208,7 @@ func TestPlanOnRepeatUsesTheHistoryWhenItWasRead(t *testing.T) {
 // Every description this file adds is held to the project's own rules.
 func TestOnRepeatDescriptionsHaveNoEmDash(t *testing.T) {
 	for _, d := range []string{OnRepeatAllTimeDescription, onRepeatHistoryDescription(30 * day)} {
-		if strings.ContainsRune(d, '—') {
+		if strings.ContainsRune(d, '\u2014') {
 			t.Fatalf("em dash in %q", d)
 		}
 		if !strings.HasPrefix(d, "NaviBeat Mixes: ") {
