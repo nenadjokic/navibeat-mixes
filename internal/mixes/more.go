@@ -602,22 +602,73 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
 	sortScored(scored)
-	// The anchor is exempt from maxPerArtist, every other artist is not. See
-	// takeIDsCappedExcept for why.
-	//
-	// ⛔ TRIMMED AS WELL AS LOWER-CASED, and both halves of that are load
-	// bearing. The exemption has to recognise exactly the tracks the EqualFold
-	// tests above scored as anchor tracks. Measured while fixing this: with the
-	// scoring trimmed but the exemption not, an artist tagged half "Padded" and
-	// half " Padded" scored all twelve tracks as anchor tracks and then had six
-	// of them thrown away by the cap as if they were a guest artist, so the mix
-	// came out at nine and its number went missing anyway.
 	return Selection{
 		Slot:     DailyMix,
 		Mode:     ModeFallback,
-		TrackIDs: takeIDsCappedExcept(scored, size, maxPerArtist, strings.ToLower(strings.TrimSpace(anchor))),
+		TrackIDs: pickDailyMix(scored, anchor, size, maxPerArtist),
 	}
 }
+
+// pickDailyMix turns the scored pool into the mix: a share of the anchor's own
+// tracks spread through its genre neighbours, each neighbour held to
+// maxPerArtist.
+//
+// ⛔ THE ANCHOR GETS A SHARE, NOT THE WHOLE MIX. i-byrana (issue #14, 0.9.20):
+// "Daily Mix 1 is just tracks from Paul Kalkbrenner", who was also Artist
+// Radio 1, because Daily Mix i is anchored on the artist of Artist Radio i+1
+// (main.go). Since 0.9.6 the anchor was exempt from the cap AND scored 20
+// above any neighbour, so an anchor that owned a full mix of tracks took
+// every slot and the Daily Mix was the Artist Radio a second time.
+//
+// The anchor still fills whatever the neighbours cannot. That is issue #4: an
+// anchor with no genre neighbours must still reach minMixSize, or its number
+// goes missing from the user's library.
+//
+// ⛔ TRIMMED AS WELL AS LOWER-CASED. The split has to recognise exactly the
+// tracks the EqualFold tests in BuildDailyMix scored as anchor tracks. With
+// the scoring trimmed but this not, an artist tagged half "Padded" and half
+// " Padded" had half of its tracks treated as a guest artist.
+func pickDailyMix(scored []scoredTrack, anchor string, size, maxPerArtist int) []string {
+	var own, near []scoredTrack
+	for _, s := range scored {
+		if strings.EqualFold(strings.TrimSpace(s.track.Artist), anchor) {
+			own = append(own, s)
+		} else {
+			near = append(near, s)
+		}
+	}
+	if size <= 0 {
+		return takeIDsCappedExcept(scored, size, maxPerArtist, strings.ToLower(strings.TrimSpace(anchor)))
+	}
+	share := size / dailyMixAnchorShare
+	if share < 1 {
+		share = 1
+	}
+	share = min(share, len(own))
+
+	byID := make(map[string]scoredTrack, len(near))
+	for _, s := range near {
+		byID[s.track.ID] = s
+	}
+	picked := make([]scoredTrack, 0, size)
+	for _, id := range takeIDsCapped(near, size-share, maxPerArtist) {
+		picked = append(picked, byID[id])
+	}
+	ownCount := min(len(own), size-len(picked))
+
+	// Day 0 puts the anchor's strongest track first, then one anchor track per
+	// band, so the artist the description names runs through the whole mix.
+	ordered := spreadAnchors(own[:ownCount], picked, 0)
+	ids := make([]string, 0, len(ordered))
+	for _, s := range ordered {
+		ids = append(ids, s.track.ID)
+	}
+	return ids
+}
+
+// dailyMixAnchorShare is the anchor's share of a Daily Mix while neighbours
+// are available: one track in three.
+const dailyMixAnchorShare = 3
 
 // WeekIndex is a stable rotation counter that advances once per week.
 //
