@@ -605,13 +605,70 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 	return Selection{
 		Slot:     DailyMix,
 		Mode:     ModeFallback,
-		TrackIDs: pickDailyMix(scored, anchor, size, maxPerArtist),
+		TrackIDs: pickDailyMix(scored, anchor, relatedArtists(tracks, anchor, genres, dailyMixFeatured-1), size, maxPerArtist),
 	}
 }
 
-// pickDailyMix turns the scored pool into the mix: a share of the anchor's own
-// tracks spread through its genre neighbours, each neighbour held to
-// maxPerArtist.
+// relatedArtists returns up to n artists, lower-cased and trimmed, that share
+// the most of the anchor's genres. Ties go to the artist with more plays in the
+// pool, then to the name, so the same library gives the same mix twice.
+//
+// Genre is the only similarity the plugin has (BuildForArtist says the same),
+// so "related" means exactly this: same genres, counted per genre shared.
+func relatedArtists(tracks []Track, anchor string, genres map[string]bool, n int) []string {
+	if n <= 0 || len(genres) == 0 {
+		return nil
+	}
+	anchorKey := strings.ToLower(strings.TrimSpace(anchor))
+	shared := map[string]map[string]bool{}
+	plays := map[string]int{}
+	for _, t := range tracks {
+		key := strings.ToLower(strings.TrimSpace(t.Artist))
+		if key == "" || key == anchorKey {
+			continue
+		}
+		for _, g := range t.AllGenres() {
+			g = strings.ToLower(g)
+			if !genres[g] {
+				continue
+			}
+			if shared[key] == nil {
+				shared[key] = map[string]bool{}
+			}
+			shared[key][g] = true
+		}
+		plays[key] += t.PlayCount
+	}
+	keys := make([]string, 0, len(shared))
+	for k := range shared {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if len(shared[a]) != len(shared[b]) {
+			return len(shared[a]) > len(shared[b])
+		}
+		if plays[a] != plays[b] {
+			return plays[a] > plays[b]
+		}
+		return a < b
+	})
+	if len(keys) > n {
+		keys = keys[:n]
+	}
+	return keys
+}
+
+// pickDailyMix turns the scored pool into the mix: three featured artists, the
+// anchor and the two artists closest to it, with a fixed share each, and the
+// rest from other artists in the same genres, each held to maxPerArtist.
+//
+// ⛔ THREE ARTISTS, NOT ONE. vbrzezina (issue #14, after 0.9.22) asked for a
+// Daily Mix of several artists; Nenad chose the shape on 2026-10-23
+// (D503061-DAILY A): at a mix size of 30, the anchor and two related artists
+// with 6 tracks each, plus 12 tracks from other artists in the anchor's genres.
+// Before that the anchor held one track in three and everybody else three at
+// most, which still read as one artist and filler.
 //
 // ⛔ THE ANCHOR GETS A SHARE, NOT THE WHOLE MIX. i-byrana (issue #14, 0.9.20):
 // "Daily Mix 1 is just tracks from Paul Kalkbrenner", who was also Artist
@@ -620,45 +677,58 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 // above any neighbour, so an anchor that owned a full mix of tracks took
 // every slot and the Daily Mix was the Artist Radio a second time.
 //
-// The anchor still fills whatever the neighbours cannot. That is issue #4: an
-// anchor with no genre neighbours must still reach minMixSize, or its number
-// goes missing from the user's library.
+// A related artist with fewer tracks than its share leaves the gap to the
+// other artists in the genre, and the anchor still fills whatever nobody else
+// can. That is issue #4: an anchor with no genre neighbours must still reach
+// minMixSize, or its number goes missing from the user's library.
 //
 // ⛔ TRIMMED AS WELL AS LOWER-CASED. The split has to recognise exactly the
 // tracks the EqualFold tests in BuildDailyMix scored as anchor tracks. With
 // the scoring trimmed but this not, an artist tagged half "Padded" and half
 // " Padded" had half of its tracks treated as a guest artist.
-func pickDailyMix(scored []scoredTrack, anchor string, size, maxPerArtist int) []string {
+func pickDailyMix(scored []scoredTrack, anchor string, related []string, size, maxPerArtist int) []string {
+	if size <= 0 {
+		return takeIDsCappedExcept(scored, size, maxPerArtist, strings.ToLower(strings.TrimSpace(anchor)))
+	}
+	relIndex := map[string]int{}
+	for i, r := range related {
+		relIndex[r] = i
+	}
 	var own, near []scoredTrack
+	rel := make([][]scoredTrack, len(related))
 	for _, s := range scored {
+		key := strings.ToLower(strings.TrimSpace(s.track.Artist))
 		if strings.EqualFold(strings.TrimSpace(s.track.Artist), anchor) {
 			own = append(own, s)
+		} else if i, ok := relIndex[key]; ok {
+			rel[i] = append(rel[i], s)
 		} else {
 			near = append(near, s)
 		}
 	}
-	if size <= 0 {
-		return takeIDsCappedExcept(scored, size, maxPerArtist, strings.ToLower(strings.TrimSpace(anchor)))
-	}
-	share := size / dailyMixAnchorShare
+	share := size / dailyMixShareDivisor
 	if share < 1 {
 		share = 1
 	}
-	share = min(share, len(own))
+	featured := 0
+	for i := range rel {
+		rel[i] = rel[i][:min(share, len(rel[i]))]
+		featured += len(rel[i])
+	}
 
 	byID := make(map[string]scoredTrack, len(near))
 	for _, s := range near {
 		byID[s.track.ID] = s
 	}
 	picked := make([]scoredTrack, 0, size)
-	for _, id := range takeIDsCapped(near, size-share, maxPerArtist) {
+	for _, id := range takeIDsCapped(near, max(0, size-min(share, len(own))-featured), maxPerArtist) {
 		picked = append(picked, byID[id])
 	}
-	ownCount := min(len(own), size-len(picked))
+	own = own[:min(len(own), size-featured-len(picked))]
 
-	// Day 0 puts the anchor's strongest track first, then one anchor track per
-	// band, so the artist the description names runs through the whole mix.
-	ordered := spreadAnchors(own[:ownCount], picked, 0)
+	groups := append([][]scoredTrack{own}, rel...)
+	groups = append(groups, picked)
+	ordered := interleaveDailyMix(groups)
 	ids := make([]string, 0, len(ordered))
 	for _, s := range ordered {
 		ids = append(ids, s.track.ID)
@@ -666,9 +736,58 @@ func pickDailyMix(scored []scoredTrack, anchor string, size, maxPerArtist int) [
 	return ids
 }
 
-// dailyMixAnchorShare is the anchor's share of a Daily Mix while neighbours
-// are available: one track in three.
-const dailyMixAnchorShare = 3
+// interleaveDailyMix spreads every group evenly through the mix with a smooth
+// weighted round robin: at each slot every group gains its size in credit, the
+// group with the most credit plays next and pays the total back. A group of 6
+// and a group of 12 then alternate instead of following each other in blocks,
+// and a large group is broken up by every smaller one (issue #14: anchor tracks
+// bunched together when the anchor held most of the mix). The first slot is the
+// anchor's, so the mix opens on the anchor's strongest track, the same first
+// track as the Artist Radio with that number. Ties go to the earlier group, so
+// the order is the same on every run.
+func interleaveDailyMix(groups [][]scoredTrack) []scoredTrack {
+	total := 0
+	for _, g := range groups {
+		total += len(g)
+	}
+	out := make([]scoredTrack, 0, total)
+	credit := make([]int, len(groups))
+	next := make([]int, len(groups))
+	take := func(g int) {
+		out = append(out, groups[g][next[g]])
+		next[g]++
+	}
+	if len(groups) > 0 && len(groups[0]) > 0 {
+		for g := range groups {
+			credit[g] += len(groups[g])
+		}
+		credit[0] -= total
+		take(0)
+	}
+	for len(out) < total {
+		best := -1
+		for g := range groups {
+			if next[g] >= len(groups[g]) {
+				continue
+			}
+			credit[g] += len(groups[g])
+			if best < 0 || credit[g] > credit[best] {
+				best = g
+			}
+		}
+		credit[best] -= total
+		take(best)
+	}
+	return out
+}
+
+// dailyMixFeatured is how many artists a Daily Mix features: the anchor and
+// the two artists closest to it. Each gets a fifth of the mix (6 of 30), and
+// the other artists in the genre share the remaining 12.
+const dailyMixFeatured = 3
+
+// dailyMixShareDivisor makes each featured artist's share a fifth of the mix.
+const dailyMixShareDivisor = 5
 
 // WeekIndex is a stable rotation counter that advances once per week.
 //

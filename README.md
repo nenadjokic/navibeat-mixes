@@ -46,7 +46,7 @@ Up to 23 playlists, every one of them optional.
 | Weekly Discovery | Music you own, played once or twice, then forgot |
 | Genre Radio 1 to 3 | Your strongest genres, ranked by what you play |
 | Artist Radio 1 to 5 | Everything you have by each of your top artists |
-| Daily Mix 1 to 3 | Built around a different anchor artist each |
+| Daily Mix 1 to 3 | Built around a different anchor artist each: the anchor and the two artists closest to it in genre, 6 tracks each in a 30 track mix, plus other artists from the same genres |
 | Decade mixes | Your strongest decades, for example 1990s |
 | Wrapped 2026 | Your most played since the plugin was installed |
 

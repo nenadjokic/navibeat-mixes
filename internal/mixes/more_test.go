@@ -299,8 +299,14 @@ func TestDailyMixDoesNotThrottleItsOwnAnchor(t *testing.T) {
 	}
 }
 
-// The cap is not switched off, it simply stops applying to the anchor. It is
-// still the thing that keeps one guest from taking over the mix.
+// The cap is not switched off, it simply stops applying to the featured
+// artists. It is still the thing that keeps one guest from taking over the mix.
+//
+// Changed 2026-10-23 for D503061-DAILY A (issue #14): a Daily Mix now features
+// the anchor and the two artists closest to it with a fifth of the mix each, so
+// "Guest", the most played artist sharing the anchor's genre, is a featured
+// artist and is held to that share (6 of 30) instead of the cap of 3. Every
+// artist outside the three is still held to the cap.
 func TestDailyMixStillCapsEveryArtistThatIsNotTheAnchor(t *testing.T) {
 	// The anchor owns two tracks, so this mix genuinely has to widen through
 	// the genre, which is where a hungry guest would otherwise eat it.
@@ -329,8 +335,26 @@ func TestDailyMixStillCapsEveryArtistThatIsNotTheAnchor(t *testing.T) {
 			anchors++
 		}
 	}
-	if guests > 3 {
-		t.Errorf("one guest artist contributed %d tracks against a cap of 3: exempting the anchor must not exempt everybody", guests)
+	if guests > 30/5 {
+		t.Errorf("one guest artist contributed %d tracks against a featured share of 6: exempting the anchor must not exempt everybody", guests)
+	}
+	perFiller := map[string]int{}
+	for _, id := range got {
+		if strings.HasPrefix(id, "filler") {
+			n, _ := strconv.Atoi(strings.TrimPrefix(id, "filler"))
+			perFiller["Filler"+strconv.Itoa(n%10)]++
+		}
+	}
+	// The fillers tie on plays, so the name breaks the tie and Filler0 is the
+	// third featured artist; it may take up to the share, the rest the cap.
+	for a, n := range perFiller {
+		limit := 3
+		if a == "Filler0" {
+			limit = 30 / 5
+		}
+		if n > limit {
+			t.Errorf("%s contributed %d tracks against a limit of %d", a, n, limit)
+		}
 	}
 	if anchors != 2 {
 		t.Errorf("the anchor contributed %d of its 2 tracks, wanted both: it is the artist the mix is named after", anchors)
