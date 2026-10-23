@@ -364,14 +364,18 @@ func spreadAnchors(anchors, window []scoredTrack, day int) []scoredTrack {
 		out = append(out, anchors...)
 		return append(out, window...)
 	}
+	if len(anchors) > len(window) && len(window) > 0 {
+		return spreadMinority(anchors, window, n)
+	}
 	out := make([]scoredTrack, n)
 	filled := make([]bool, n)
-	step := n / len(anchors)
-	if step < 1 {
-		step = 1
-	}
+	// Position i*n/len(anchors), not i*(n/len(anchors)): with integer step the
+	// step falls to 1 once the anchors hold more than half the mix, and every
+	// anchor then lands in one block at the top (issue #14, after 0.9.21, a
+	// Daily Mix with few genre neighbours). When n divides evenly, as for the
+	// time-of-day mixes and a normal Daily Mix, the positions are unchanged.
 	for i, a := range anchors {
-		p := (day + i*step) % n
+		p := (day + i*n/len(anchors)) % n
 		for filled[p] {
 			p = (p + 1) % n
 		}
@@ -558,4 +562,39 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// spreadMinority is spreadAnchors for the case the anchors hold most of the
+// mix (a Daily Mix whose anchor has few genre neighbours). The anchors still
+// open the mix and keep their score order; the few other tracks are placed at
+// even gaps between them, so no run of the anchor is longer than it has to be.
+// Only a Daily Mix reaches this: the time-of-day mixes always have fewer
+// anchors than window tracks.
+func spreadMinority(anchors, window []scoredTrack, n int) []scoredTrack {
+	isWindow := make([]bool, n)
+	for j := range window {
+		p := (j + 1) * n / (len(window) + 1)
+		for p < n && isWindow[p] {
+			p++
+		}
+		if p >= n {
+			p = n - 1
+			for isWindow[p] {
+				p--
+			}
+		}
+		isWindow[p] = true
+	}
+	out := make([]scoredTrack, 0, n)
+	a, w := 0, 0
+	for i := 0; i < n; i++ {
+		if isWindow[i] {
+			out = append(out, window[w])
+			w++
+		} else {
+			out = append(out, anchors[a])
+			a++
+		}
+	}
+	return out
 }
