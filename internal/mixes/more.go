@@ -613,29 +613,43 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 }
 
 // featuredArtists lists the anchor and the related artists that have a track in
-// the mix, with the spelling from the tags rather than the lower-cased key
-// relatedArtists works with. A related artist that did not make it into the mix
-// is left out, so the description never names someone the listener will not hear.
+// the mix, spelled the way most of their tracks are tagged rather than as the
+// lower-cased key relatedArtists works with. A library often holds one artist
+// under two spellings ("Sick Puppies" and "SICK PUPPIES"); the commoner one is
+// used, and on a tie the one that sorts first, so the same library gives the
+// same description twice. A related artist that did not make it into the mix is
+// left out, so the description never names someone the listener will not hear.
 func featuredArtists(tracks []Track, anchor string, related, ids []string) []string {
 	inMix := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		inMix[id] = true
 	}
-	display := map[string]string{}
+	spellings := map[string]map[string]int{}
 	heard := map[string]bool{}
 	for _, t := range tracks {
-		key := strings.ToLower(strings.TrimSpace(t.Artist))
-		if _, ok := display[key]; !ok {
-			display[key] = strings.TrimSpace(t.Artist)
+		name := strings.TrimSpace(t.Artist)
+		key := strings.ToLower(name)
+		if spellings[key] == nil {
+			spellings[key] = map[string]int{}
 		}
+		spellings[key][name]++
 		if inMix[t.ID] {
 			heard[key] = true
 		}
 	}
-	out := []string{anchor}
+	display := func(key, fallback string) string {
+		best, bestN := fallback, 0
+		for name, n := range spellings[key] {
+			if n > bestN || (n == bestN && name < best) {
+				best, bestN = name, n
+			}
+		}
+		return best
+	}
+	out := []string{display(strings.ToLower(strings.TrimSpace(anchor)), anchor)}
 	for _, r := range related {
 		if heard[r] {
-			out = append(out, display[r])
+			out = append(out, display(r, r))
 		}
 	}
 	return out
