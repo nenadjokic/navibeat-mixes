@@ -1066,15 +1066,26 @@ func pollControl() error {
 		// Nonce de-duplication. Without it the command sits in the playlist
 		// and is executed again on every poll, turning one button press into
 		// an endless regeneration loop.
-		if lastNonce(u.UserName) == cmd.Nonce {
+		// The state is stored BEFORE the run, so a command that crashes the
+		// call cannot loop. A run the host cut short used to leave the command
+		// in the mailbox forever with no result; it now gets one retry after
+		// the budget has surely run out, then a rejected answer.
+		timeout := time.Duration(cfg.BudgetSeconds)*time.Second + time.Minute
+		decision := protocol.DecideControlAttempt(lastNonce(u.UserName), cmd.Nonce, time.Now(), timeout)
+		if decision.Action == protocol.ControlSkip {
 			continue
 		}
-		setLastNonce(u.UserName, cmd.Nonce)
+		setLastNonce(u.UserName, decision.Stored)
 
-		result := protocol.ResultDone
-		if err := runCommand(cfg, u.UserName, cmd); err != nil {
-			logf("control command failed: %v", err)
-			result = protocol.ResultRejected
+		result := protocol.ResultRejected
+		if decision.Action == protocol.ControlRun {
+			result = protocol.ResultDone
+			if err := runCommand(cfg, u.UserName, cmd); err != nil {
+				logf("control command failed: %v", err)
+				result = protocol.ResultRejected
+			}
+		} else {
+			logf("control command %s never finished after two runs, answering rejected", cmd.Nonce)
 		}
 
 		// Clear the command and leave the result in its place, so the mailbox
@@ -1087,7 +1098,9 @@ func pollControl() error {
 			protocol.Meta{Kind: "control", Slot: "control", Date: time.Now().Format("2006-01-02"), Mode: "ready", Count: 0},
 		) + "\n" + protocol.FormatResult(result, cmd.Slot, cmd.Nonce)
 		rebuilt = protocol.AppendLine(rebuilt, protocol.FormatStyle(protocol.Style(cfg.MixStyle)))
-		_ = client.SetComment(target.ID, rebuilt)
+		if client.SetComment(target.ID, rebuilt) == nil {
+			setLastNonce(u.UserName, protocol.ControlFinished(cmd.Nonce))
+		}
 	}
 	return nil
 }
