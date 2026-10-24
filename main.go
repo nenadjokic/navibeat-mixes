@@ -725,19 +725,6 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	return true, nil
 }
 
-// writeMix creates or updates one playlist. A mix that selected nothing is
-// left alone rather than emptied: a user who opens a playlist they liked
-// yesterday and finds it blank has lost something, and an empty playlist
-// communicates a bug even when the truth is only "not enough data yet".
-func writeMix(client *library.Client, cfg config.Config, sel mixes.Selection, now time.Time, username string) {
-	if len(sel.TrackIDs) < minMixSize {
-		logf("user %s: not enough listening yet for a useful mix, leaving it alone", username)
-		return
-	}
-
-	writeNamed(client, cfg, cfg.PlaylistName(string(sel.Slot)), cfg.PlaylistName(string(sel.Slot)), sel, describe(cfg, sel), kindFor(sel.Slot), now, username)
-}
-
 // publishStyle writes the presentation style onto the control playlist, and is
 // deliberately callable from BOTH the daily generation and the five-minute
 // control poll.
@@ -806,10 +793,16 @@ const (
 // ⛔ THE SKIP IS NOT SILENT ANY MORE, AND THAT WAS A REAL REPORT. SinTan1729
 // (issue #4) saw Artist Radio and Daily Mix numbering start at 2 and wrote
 // "I don't see any useful info in the logs", which was exactly right: the twin
-// of this guard in writeMix does log, but writeMix has no callers, so every
-// numbered mix came through here and this branch said nothing at all. One line
-// naming the playlist and its count against the threshold is what turns a
-// missing number into something a person can read off a log.
+// of this guard lived in a writeMix function that had no callers (removed in
+// the 2026-10-24 review, with kindFor that only it used), so every numbered mix
+// came through here and this branch said nothing at all. One line naming the
+// playlist and its count against the threshold is what turns a missing number
+// into something a person can read off a log.
+//
+// A mix that selected too little is left alone rather than emptied: a user who
+// opens a playlist they liked yesterday and finds it blank has lost something,
+// and an empty playlist reads as a bug even when the truth is only "not enough
+// data yet".
 func writeNamed(client *library.Client, cfg config.Config, name, legacy string, sel mixes.Selection, human, kind string, now time.Time, username string) writeOutcome {
 	if len(sel.TrackIDs) < minMixSize {
 		logf("user %s: %s has %d tracks, under the %d a mix needs, so it was left alone",
@@ -879,13 +872,6 @@ func writeNamed(client *library.Client, cfg config.Config, name, legacy string, 
 		return writeFailed
 	}
 	return writeOK
-}
-
-func kindFor(slot mixes.Slot) string {
-	if slot == mixes.Rediscover {
-		return "rediscover"
-	}
-	return "timeofday"
 }
 
 // describe writes the sentence a person reads.

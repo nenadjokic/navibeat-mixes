@@ -565,11 +565,16 @@ func min(a, b int) int {
 }
 
 // spreadMinority is spreadAnchors for the case the anchors hold most of the
-// mix (a Daily Mix whose anchor has few genre neighbours). The anchors still
-// open the mix and keep their score order; the few other tracks are placed at
-// even gaps between them, so no run of the anchor is longer than it has to be.
-// Only a Daily Mix reaches this: the time-of-day mixes always have fewer
-// anchors than window tracks.
+// mix. The anchors still open the mix and keep their score order; the few
+// other tracks are placed at even gaps between them, so no run of the anchor
+// is longer than it has to be.
+//
+// Written for the 0.9.22 Daily Mix, whose anchor had few genre neighbours.
+// Since 0.9.23 the Daily Mix is ordered by interleaveDailyMix (more.go) and
+// never comes through here. The time-of-day mixes reach it only with a mixSize
+// under 10 (five anchors against fewer window tracks), and a mix that small is
+// never written (minMixSize), so in practice this path is idle; it stays so
+// rotateDaily has an answer for every size rather than a special case.
 func spreadMinority(anchors, window []scoredTrack, n int) []scoredTrack {
 	isWindow := make([]bool, n)
 	for j := range window {
