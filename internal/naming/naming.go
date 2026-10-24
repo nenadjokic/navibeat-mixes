@@ -138,6 +138,27 @@ func ResolveCollisions(items []Item) []string {
 // whoever tagged the file, so they are untrusted text.
 func Subject(s string) string { return Clean(s) }
 
+// DailySentence is the human line of a Daily Mix. A mix that features several
+// artists names them all ("Muse, Linkin Park and Måneskin"); one that features
+// only the anchor keeps the sentence for a single subject. featured is cleaned
+// here like any other subject, and blank names are skipped.
+func DailySentence(anchor string, featured []string) string {
+	var names []string
+	for _, f := range featured {
+		if f = Subject(f); f != "" {
+			names = append(names, f)
+		}
+	}
+	switch len(names) {
+	case 0, 1:
+		return Sentence("dailymix", anchor)
+	case 2:
+		return "NaviBeat Mixes: built around " + names[0] + " and " + names[1] + ", plus artists that sit near them. Rotates weekly."
+	}
+	last := len(names) - 1
+	return "NaviBeat Mixes: built around " + strings.Join(names[:last], ", ") + " and " + names[last] + ", plus artists that sit near them. Rotates weekly."
+}
+
 // Sentence is the human line of the description of a mix named after a
 // subject. kind is the mix family; subject is cleaned here, so a caller cannot
 // forget to. An unknown kind gives just the cleaned subject.

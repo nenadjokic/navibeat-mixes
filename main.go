@@ -614,9 +614,9 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			mixes.BuildForArtist(tracks, a, cfg.MixSize))
 	}
 	for i := 0; i < 3 && i < len(artists); i++ {
+		sel := mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, cfg.MaxPerArtist)
 		add("dailymix", "Daily Mix "+strconv.Itoa(i+1), mixes.NumberedSlot(mixes.DailyMix, i+1),
-			naming.Sentence("dailymix", artists[i]), "dailymix",
-			mixes.BuildDailyMix(tracks, artists, i, cfg.MixSize, cfg.MaxPerArtist))
+			naming.DailySentence(artists[i], sel.Featured), "dailymix", sel)
 	}
 	// Same floor and same reason as the genre and artist pools: a decade that
 	// cannot fill a mix must not take a rotation slot it will then leave empty.

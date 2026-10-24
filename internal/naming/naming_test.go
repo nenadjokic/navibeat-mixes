@@ -119,3 +119,34 @@ func TestResolveCollisions(t *testing.T) {
 		}
 	}
 }
+
+func TestDailySentenceNamesEveryFeaturedArtist(t *testing.T) {
+	const tail = ", plus artists that sit near them. Rotates weekly."
+	cases := []struct {
+		name     string
+		featured []string
+		want     string
+	}{
+		{"three artists", []string{"Muse", "Linkin Park", "Måneskin"}, "NaviBeat Mixes: built around Muse, Linkin Park and Måneskin" + tail},
+		{"two artists", []string{"Muse", "Linkin Park"}, "NaviBeat Mixes: built around Muse and Linkin Park" + tail},
+		{"only the anchor keeps the single subject sentence", []string{"Muse"}, "NaviBeat Mixes: built around Muse and what sits near it. Rotates weekly."},
+		{"nothing featured falls back to the anchor", nil, "NaviBeat Mixes: built around Muse and what sits near it. Rotates weekly."},
+		{"blank names are skipped", []string{"Muse", "  ", "Kasabian"}, "NaviBeat Mixes: built around Muse and Kasabian" + tail},
+	}
+	for _, c := range cases {
+		if got := DailySentence("Muse", c.featured); got != c.want {
+			t.Errorf("%s: DailySentence = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// Every featured artist is a tag, and tags are untrusted: a line break must not
+// let one of them put a fake machine line ahead of the real one.
+func TestDailySentenceCannotInjectAMachineLine(t *testing.T) {
+	human := DailySentence("Muse", []string{"Muse", "Evil\nnb1:a:b:c:d:1", "Kasabian"})
+	comment := protocol.Format(human, protocol.Meta{Kind: "dailymix", Slot: "dailymix-1", Date: "2026-01-01", Mode: "fallback", Count: 30})
+	meta, ok := protocol.Parse(comment)
+	if !ok || meta.Kind != "dailymix" || meta.Slot != "dailymix-1" {
+		t.Errorf("Parse = %+v ok=%v, want the real kind and slot", meta, ok)
+	}
+}
