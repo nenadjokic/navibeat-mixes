@@ -602,11 +602,43 @@ func BuildDailyMix(tracks []Track, anchors []string, index, size, maxPerArtist i
 		scored = append(scored, scoredTrack{track: t, score: s})
 	}
 	sortScored(scored)
+	related := relatedArtists(tracks, anchor, genres, dailyMixFeatured-1)
+	ids := pickDailyMix(scored, anchor, related, size, maxPerArtist)
 	return Selection{
 		Slot:     DailyMix,
 		Mode:     ModeFallback,
-		TrackIDs: pickDailyMix(scored, anchor, relatedArtists(tracks, anchor, genres, dailyMixFeatured-1), size, maxPerArtist),
+		TrackIDs: ids,
+		Featured: featuredArtists(tracks, anchor, related, ids),
 	}
+}
+
+// featuredArtists lists the anchor and the related artists that have a track in
+// the mix, with the spelling from the tags rather than the lower-cased key
+// relatedArtists works with. A related artist that did not make it into the mix
+// is left out, so the description never names someone the listener will not hear.
+func featuredArtists(tracks []Track, anchor string, related, ids []string) []string {
+	inMix := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		inMix[id] = true
+	}
+	display := map[string]string{}
+	heard := map[string]bool{}
+	for _, t := range tracks {
+		key := strings.ToLower(strings.TrimSpace(t.Artist))
+		if _, ok := display[key]; !ok {
+			display[key] = strings.TrimSpace(t.Artist)
+		}
+		if inMix[t.ID] {
+			heard[key] = true
+		}
+	}
+	out := []string{anchor}
+	for _, r := range related {
+		if heard[r] {
+			out = append(out, display[r])
+		}
+	}
+	return out
 }
 
 // relatedArtists returns up to n artists, lower-cased and trimmed, that share

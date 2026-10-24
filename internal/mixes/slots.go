@@ -152,6 +152,10 @@ type Selection struct {
 	// a wider one was used, so the description can be honest about it.
 	Relaxed  bool
 	TrackIDs []string
+	// Featured names the artists a Daily Mix is built around, the anchor first,
+	// so its description can name them. Only artists that got at least one
+	// track into the mix are listed. Empty for every other mix.
+	Featured []string
 }
 
 // RediscoverOptions controls the Rediscover mix.
