@@ -710,10 +710,26 @@ func pickDailyMix(scored []scoredTrack, anchor string, related []string, size, m
 	if share < 1 {
 		share = 1
 	}
-	featured := 0
+	// The mix is filled against ONE budget, in this order: the anchor's share
+	// is reserved first, each related artist takes up to its share of what is
+	// left, the other artists in the genre take the rest, and whatever nobody
+	// could fill goes back to the anchor. Every group is cut to the room left,
+	// so the result can never exceed size.
+	//
+	// Code review 2026-10-24: the previous arithmetic derived the room for the
+	// other artists by subtraction and handed takeIDsCapped a size of 0 when
+	// that came out as nothing, which takeIDsCapped reads as NO LIMIT (every
+	// caller before this one used 0 for "the whole list"). At a mix size under
+	// four (config.Load accepts any positive mixSize; the manifest's minimum of
+	// 10 is a form hint) that picked every other track, the anchor's share went
+	// negative, own[:n] panicked and the panic killed the whole generation call.
+	remaining := size
+	anchorShare := min(share, len(own))
+	remaining -= anchorShare
 	for i := range rel {
-		rel[i] = rel[i][:min(share, len(rel[i]))]
-		featured += len(rel[i])
+		take := min(min(share, len(rel[i])), remaining)
+		rel[i] = rel[i][:take]
+		remaining -= take
 	}
 
 	byID := make(map[string]scoredTrack, len(near))
@@ -721,10 +737,15 @@ func pickDailyMix(scored []scoredTrack, anchor string, related []string, size, m
 		byID[s.track.ID] = s
 	}
 	picked := make([]scoredTrack, 0, size)
-	for _, id := range takeIDsCapped(near, max(0, size-min(share, len(own))-featured), maxPerArtist) {
-		picked = append(picked, byID[id])
+	if remaining > 0 {
+		for _, id := range takeIDsCapped(near, remaining, maxPerArtist) {
+			picked = append(picked, byID[id])
+		}
+		remaining -= len(picked)
 	}
-	own = own[:min(len(own), size-featured-len(picked))]
+	// The anchor fills what nobody else could (issue #4: an anchor with no
+	// genre neighbours must still reach minMixSize).
+	own = own[:min(len(own), anchorShare+remaining)]
 
 	groups := append([][]scoredTrack{own}, rel...)
 	groups = append(groups, picked)
