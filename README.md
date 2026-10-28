@@ -158,11 +158,11 @@ build the same mixes. So rename `navibeat-mixes-navidrome-0.64.ndp` to
 
 4. Restart Navidrome, then switch the plugin **on** in **Settings, Plugins**.
 
-**There is no permission prompt, and nothing to tick one by one.** Navidrome
-grants a plugin everything its manifest declares at the moment you enable it.
-The permission list on the plugin's page is there so you can read what it will
-be allowed to do before you switch it on: clicking one explains it, it does not
-toggle it. This plugin asks for five (six in the 0.64 file):
+**There is no permission prompt.** Navidrome grants a plugin everything its manifest declares at the moment you enable it.
+The permission list on the plugin's page is there so you can read what it will be allowed to do before you switch it on.
+**One card does need you: Users Permission.** Switch on "Allow all users", or tick every account that should get mixes under
+"Selected users". An account that is not ticked there is never handed to the plugin, so it gets no playlists even when
+its name is in "Build mixes only for these accounts". Saving that card reloads the plugin and the mixes follow within a minute. This plugin asks for five (six in the 0.64 file):
 
 | Permission | Why |
 |---|---|
