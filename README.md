@@ -235,9 +235,12 @@ files, no restart. Five groups:
 Every field has a default that works on a server nobody has touched, so you can
 install it and never open the settings at all.
 
-**If Rediscover comes out empty**, your listening is simply too current for it:
-nothing you starred has gone six months untouched. Lower the Rediscover age to
-2 or 3 months.
+**If Rediscover comes out empty**, fewer than 10 tracks qualify. Rediscover takes
+tracks you starred, or played 3 times or more, that you have not played for at
+least a month. When too few are that old it narrows the age by itself, down to
+one month, so a lower setting does not fill it. Starring more of your older
+favourites does. The log says how many it found:
+`Rediscover has N tracks, under the 10 a mix needs, so it was left alone`.
 
 **A mix needs at least 10 tracks to be worth making**, so an account with very
 little listening history gets no playlists rather than a four track one.
