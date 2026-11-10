@@ -104,3 +104,24 @@ func (c *Call) withdraw(s Scheduler, st Store) {
 	}
 	c.Fallback = ""
 }
+
+// BeginControlCall is BeginCall for a re-roll from the control playlist: it
+// reads the same mark and takes the same bite, and gives up on the same rung,
+// but it arms NOTHING.
+//
+// 0.9.27 armed a fallback here too, and that broke the generate chain: a
+// re-roll runs under the control schedule's id, so Continue cancelled the
+// chain's pending successor (continuation or fallback) as superseded, and the
+// re-roll's own Return then withdrew the only schedule left. The control path
+// does not need a fallback anyway: a command the host cut short is retried by
+// the control poll itself (protocol.DecideControlAttempt), and with Fallback
+// empty, HandOver is plain Continue and Return touches nothing, which is
+// exactly what this path did in 0.9.26.
+func BeginControlCall(st Store, day string, fullPages int) *Call {
+	watch := NextWatch(st)
+	bite := watch.Bite(fullPages, LoadPace(st, day))
+	if bite.GiveUp {
+		ClearWatch(st)
+	}
+	return &Call{Watch: watch, Bite: bite}
+}

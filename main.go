@@ -227,8 +227,16 @@ func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 // then, and the caller returns without asking for a continuation: on that
 // server one host call outlasts the host's own deadline, and no bite this
 // plugin can take fits inside it, so another call is load and nothing else.
-func takeBite(day string) (*resume.Call, bool) {
-	call := resume.BeginCall(hostScheduler{}, hostStore{}, day, albumPages, "generate", runningScheduleID)
+//
+// `control` is true for a re-roll from the control playlist, which arms no
+// fallback: see resume.BeginControlCall for the chain 0.9.27 broke that way.
+func takeBite(day string, control bool) (*resume.Call, bool) {
+	var call *resume.Call
+	if control {
+		call = resume.BeginControlCall(hostStore{}, day, albumPages)
+	} else {
+		call = resume.BeginCall(hostScheduler{}, hostStore{}, day, albumPages, "generate", runningScheduleID)
+	}
 	watch, bite := call.Watch, call.Bite
 	if watch.Kills > 0 {
 		where := watch.Phase
@@ -319,7 +327,7 @@ func generateAll() error {
 	day := resume.DayOf(time.Now())
 	ledger := loadLedger(day)
 
-	call, ok := takeBite(day)
+	call, ok := takeBite(day, false)
 	if !ok {
 		return nil
 	}
@@ -1147,8 +1155,9 @@ func regenerateUserNow(cfg config.Config, username string) error {
 	deletePool(username)
 	budget := resume.StartBudget(time.Duration(cfg.BudgetSeconds)*time.Second, time.Now)
 	// A re-roll runs the same user pass and dies the same death on a server
-	// that cannot serve it, so it reads and leaves the same mark.
-	call, ok := takeBite(day)
+	// that cannot serve it, so it reads and leaves the same mark. It arms no
+	// fallback: the control poll retries a command the host cut short itself.
+	call, ok := takeBite(day, true)
 	if !ok {
 		return nil
 	}
