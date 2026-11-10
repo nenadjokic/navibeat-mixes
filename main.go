@@ -174,8 +174,12 @@ var runningScheduleID string
 // scheduleContinuation asks the host for one more generate call, and says
 // what the budget looked like when it gave up, so the log can tell a chain
 // that is making progress from a server that is simply too slow.
-func scheduleContinuation(budget *resume.Budget, username string) {
-	id, err := resume.Continue(hostScheduler{}, hostStore{}, continueDelaySec, "generate", runningScheduleID)
+//
+// It goes through call.HandOver rather than resume.Continue directly, so the
+// fallback armed by takeBite is withdrawn by its own id before the
+// continuation is registered (GitHub issue #18, see internal/resume/call.go).
+func scheduleContinuation(call *resume.Call, budget *resume.Budget, username string) {
+	id, err := call.HandOver(hostScheduler{}, hostStore{}, continueDelaySec, "generate", runningScheduleID)
 	if err != nil && id == "" {
 		logf("could not schedule the continuation: %v", err)
 		return
@@ -213,13 +217,19 @@ func (p *plugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 // the mark is the only thing in the store that a KILLED call leaves behind.
 // See internal/resume/watchdog.go for why the budget cannot see a kill at all.
 //
-// ok is false when every rung of the ladder has been killed. The caller then
-// returns without asking for a continuation: on that server one host call
-// outlasts the host's own deadline, and no bite this plugin can take fits
-// inside it, so another call in five seconds is load and nothing else.
-func takeBite(day string) (*resume.Watch, resume.Bite, bool) {
-	watch := resume.NextWatch(hostStore{})
-	bite := watch.Bite(albumPages, resume.LoadPace(hostStore{}, day))
+// It also arms the fallback successor before any work starts (GitHub issue
+// #18): a call the host kills schedules nothing on its own, so without the
+// fallback the next call after a kill was the next day's run, long after the
+// mark had expired, and the ladder below never moved. The caller must defer
+// call.Return, which withdraws the fallback on every path that returns.
+//
+// ok is false when every rung of the ladder has been killed. Nothing is armed
+// then, and the caller returns without asking for a continuation: on that
+// server one host call outlasts the host's own deadline, and no bite this
+// plugin can take fits inside it, so another call is load and nothing else.
+func takeBite(day string) (*resume.Call, bool) {
+	call := resume.BeginCall(hostScheduler{}, hostStore{}, day, albumPages, "generate", runningScheduleID)
+	watch, bite := call.Watch, call.Bite
 	if watch.Kills > 0 {
 		where := watch.Phase
 		if watch.User != "" {
@@ -235,12 +245,16 @@ func takeBite(day string) (*resume.Watch, resume.Bite, bool) {
 	if bite.GiveUp {
 		logf("giving up for now: %d calls in a row were killed by the host before they could return, "+
 			"the last of them asking for a single album and no starred list. This server needs longer "+
-			"for one call than the host allows a plugin, so continuing every %ds would only add load. "+
-			"The next attempt is the daily run.", watch.Kills, continueDelaySec)
-		resume.ClearWatch(hostStore{})
-		return watch, bite, false
+			"for one call than the host allows a plugin, so retrying every %ds would only add load. "+
+			"The next attempt is the daily run.", watch.Kills, resume.FallbackDelaySec)
+		return call, false
 	}
-	return watch, bite, true
+	if call.FallbackErr != nil && call.Fallback == "" {
+		logf("could not arm the fallback for a killed call: %v", call.FallbackErr)
+	} else if call.FallbackErr != nil {
+		logf("the fallback %s is armed but could not be noted: %v", call.Fallback, call.FallbackErr)
+	}
+	return call, true
 }
 
 // releaseWatch is what every call that RETURNS does on its way out: the mark
@@ -305,14 +319,17 @@ func generateAll() error {
 	day := resume.DayOf(time.Now())
 	ledger := loadLedger(day)
 
-	watch, bite, ok := takeBite(day)
+	call, ok := takeBite(day)
 	if !ok {
 		return nil
 	}
+	watch, bite := call.Watch, call.Bite
 	// Every path out of here is a path that RETURNED, which is the whole
 	// meaning of the mark. A killed call runs no deferred function, so the
-	// mark it leaves behind is exactly the evidence the next call reads.
+	// mark it leaves behind is exactly the evidence the next call reads, and
+	// the fallback it leaves pending is the call that will read it.
 	defer releaseWatch(watch, bite, day)
+	defer call.Return(hostScheduler{}, hostStore{})
 	armWatch(watch, phaseUsers, "")
 
 	users, err := host.UsersGetUsers()
@@ -345,7 +362,7 @@ func generateAll() error {
 		if !finished {
 			// Out of time with work left: hand the rest to the next call
 			// rather than be killed mid-write with nothing to say about it.
-			scheduleContinuation(budget, u.UserName)
+			scheduleContinuation(call, budget, u.UserName)
 			return nil
 		}
 	}
@@ -1131,15 +1148,17 @@ func regenerateUserNow(cfg config.Config, username string) error {
 	budget := resume.StartBudget(time.Duration(cfg.BudgetSeconds)*time.Second, time.Now)
 	// A re-roll runs the same user pass and dies the same death on a server
 	// that cannot serve it, so it reads and leaves the same mark.
-	watch, bite, ok := takeBite(day)
+	call, ok := takeBite(day)
 	if !ok {
 		return nil
 	}
+	watch, bite := call.Watch, call.Bite
 	defer releaseWatch(watch, bite, day)
+	defer call.Return(hostScheduler{}, hostStore{})
 	finished, err := generateForUser(cfg, username, ledger, budget, bite, watch)
 	saveLedger(ledger)
 	if !finished {
-		scheduleContinuation(budget, username)
+		scheduleContinuation(call, budget, username)
 	}
 	return err
 }

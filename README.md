@@ -343,7 +343,10 @@ seconds die at exactly the same moment. This is what a Raspberry Pi 3B did on
 
 The plugin handles that case itself, from 0.9.12. It writes a mark into its
 own store before the work and clears it when the call returns, so a call that
-finds the mark still there knows the previous one was killed. Each kill in a
+finds the mark still there knows the previous one was killed. From 0.9.27 each
+call also schedules its own successor two minutes out before it starts, and
+withdraws it when it returns, so a killed call is followed by the next attempt
+two minutes later instead of the next daily run. Each kill in a
 row takes a smaller bite: a quarter of the albums per list page, then a
 twentieth, then the same without the one call that cannot be made smaller
 (`getStarred2` takes no size parameter, so the only way to ask for less of it

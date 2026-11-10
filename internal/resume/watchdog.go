@@ -44,8 +44,10 @@ const (
 	PaceTTLSec = 24 * 60 * 60
 	// WatchTTLSec expires a mark left by a chain that is long dead: the
 	// plugin was disabled mid call, or the server went down. A continuation
-	// follows five seconds behind the call that asked for it, so anything
-	// this old belongs to no chain that is still running, and the next run
+	// follows five seconds behind the call that asked for it, and the
+	// fallback a killed call leaves behind (call.go, FallbackDelaySec) two
+	// minutes behind, so anything this old belongs to no chain that is still
+	// running, and the next run
 	// is owed a full bite rather than the last one's punishment. The day is
 	// deliberately NOT part of the key: a call killed at 23:59 and its
 	// continuation four seconds later are the same chain.
