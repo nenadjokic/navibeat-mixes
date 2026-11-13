@@ -93,7 +93,10 @@ On Navidrome 0.63.x, use the default download: a server older than 0.64.0 cannot
 load the 0.64 file at all (see [Which file do I download?](#which-file-do-i-download)).
 
 Until it has enough (150 plays by default), the mixes are built from your most
-played music instead, and **each playlist says so in its own description**:
+played music instead, and **each playlist says so in its own description**.
+From 0.9.29 each of the four draws its own slice of that music, so Morning,
+Afternoon, Evening and Night are four different playlists from the first day,
+and each one stays the same until the next day's refresh:
 
 > Morning mix. Still learning when you listen to what, so for now this is built
 > from your most played music. It gets more personal over the next few weeks.

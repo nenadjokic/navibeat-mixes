@@ -9,6 +9,7 @@ package mixes
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -311,11 +312,71 @@ func BuildTimeMix(tracks []Track, opt TimeMixOptions) Selection {
 
 	sortScored(scored)
 
+	ordered := rotateDaily(scored, opt.Size, opt.Day)
+	if mode == ModeFallback && opt.Day > 0 {
+		ordered = shuffleForSlot(scored, opt.Size, opt.Slot, opt.Day)
+	}
+
 	return Selection{
 		Slot:     opt.Slot,
 		Mode:     mode,
-		TrackIDs: takeIDsCapped(rotateDaily(scored, opt.Size, opt.Day), opt.Size, opt.MaxPerArtist),
+		TrackIDs: takeIDsCapped(ordered, opt.Size, opt.MaxPerArtist),
 	}
+}
+
+// shuffleForSlot is the fallback ordering: the slot's pool (the top
+// PoolFactor*Size of the popularity ranking) in an order seeded by the slot
+// AND the day, followed by the rest of the ranking so the artist cap can still
+// top the mix up.
+//
+// 0.9.29 (#503489, Bobby: "all playlists are pretty much the same songs
+// slightly reshuffled"). The fallback score has no time-of-day term, because
+// below the threshold there is no evidence of one, and every slot got the
+// same Day. So rotateDaily handed Morning, Afternoon, Evening and Night the
+// same pool, the same anchors and the same window: one list under four names.
+// Each slot now draws its own slice of the same most played music, and the
+// seed holds for the whole day, so a refresh on the same day writes the same
+// mix. No shared anchors here: in fallback the anchors were simply the five
+// most played tracks, identical in every slot, which is part of what made the
+// four read as one.
+//
+// The affinity path never comes here; it keeps rotateDaily exactly as before.
+func shuffleForSlot(scored []scoredTrack, size int, slot Slot, day int) []scoredTrack {
+	if size <= 0 || len(scored) == 0 {
+		return scored
+	}
+	poolLen := min(len(scored), size*PoolFactor)
+	type keyed struct {
+		s   scoredTrack
+		key uint64
+	}
+	pool := make([]keyed, poolLen)
+	prefix := string(slot) + "|" + strconv.Itoa(day) + "|"
+	for i, s := range scored[:poolLen] {
+		pool[i] = keyed{s: s, key: fnv64a(prefix + s.track.ID)}
+	}
+	sort.Slice(pool, func(i, j int) bool {
+		if pool[i].key != pool[j].key {
+			return pool[i].key < pool[j].key
+		}
+		return pool[i].s.track.ID < pool[j].s.track.ID
+	})
+	out := make([]scoredTrack, 0, len(scored))
+	for _, k := range pool {
+		out = append(out, k.s)
+	}
+	return append(out, scored[poolLen:]...)
+}
+
+// fnv64a is FNV-1a, written out so the seed is the same on every build
+// target and every Go version (map order or math/rand would not be).
+func fnv64a(s string) uint64 {
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	return h
 }
 
 // rotateDaily reorders a ranked list so the day's pick is the anchors, then a
