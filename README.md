@@ -49,6 +49,7 @@ Up to 23 playlists, every one of them optional.
 | Daily Mix 1 to 3 | Built around a different anchor artist each: the anchor and the two artists closest to it in genre, 6 tracks each in a 30 track mix, plus other artists from the same genres |
 | Decade mixes | Your strongest decades, for example 1990s |
 | Wrapped 2026 | Your most played since the plugin was installed |
+| Blend: you + someone | For pairs of accounts you name: songs you both play first, then each of your favourites in turn (0.9.30) |
 
 ### The contents rotate weekly; the names are fixed unless you ask otherwise
 
@@ -300,6 +301,35 @@ warming up for weeks.
 server, including other people's private ones. That is Navidrome's own rule, not
 this plugin's, so an admin account will always see more playlists than a regular
 one. Narrowing the list above is what shortens it.
+
+### Blend: two people on one server (0.9.30)
+
+**"Blend: pairs of accounts"** takes pairs of usernames joined by a plus,
+separated by commas: `nenad+ana, nenad+marko`. Each pair gets one Blend
+playlist, with a copy in each of the two accounts, built from what both of them
+play: the songs you both play come first, then one favourite from each of you
+in turn. Leave the field empty and no Blend is written, which is what every
+install did before this setting existed.
+
+The history is the plugin's own listening clock, the same one Wrapped reads, so
+it covers what each of you played since the plugin was installed. Each person
+needs at least 10 different songs in it, or the log says the Blend was skipped.
+A copy only ever holds tracks its owner's account can see.
+
+The description carries one more machine line for NaviBeat, which draws both of
+you and how close your taste is on the tile:
+
+```
+nbblend1:72:214:ana:nenad
+```
+
+Fields: the match (the share of the lighter listener's played songs the other
+has played too, 0 to 100), how many songs you both play, and the two usernames
+in sorted order with `%`, `:`, CR and LF escaped as `%25`, `%3A`, `%0D`, `%0A`.
+
+An account left out of "Build mixes only for these accounts" gets no copy of
+its Blend. Removing a pair stops refreshing its Blend; the playlist stays until
+you delete it.
 
 ### Drawing mixes from some libraries only
 

@@ -101,6 +101,44 @@ the slot, so morning and night do not get the same sun).
 
 ---
 
+### 3. Blend, on each Blend playlist (0.9.30, NaviBeat #503551)
+
+```
+nbblend1:<match>:<shared>:<userA>:<userB>
+```
+
+Example, as the fourth line of the description:
+
+```
+NaviBeat Mixes: a Blend of what you both play, shared songs first.
+Made by NaviBeat  ·  navibeat.app
+nb1:blend:blend-1f0c3a9e:2026-11-16:affinity:30
+nbblend1:72:214:ana:nenad
+```
+
+| Field | Rule |
+|---|---|
+| `match` | integer 0 to 100: the share of the lighter listener's played songs that the other one has played too |
+| `shared` | integer, 0 or more: songs both people have played |
+| `userA`, `userB` | the two Subsonic usernames, case-insensitively sorted, so both copies of a Blend carry the same line. `%`, `:`, CR, LF are written as `%25`, `%3A`, `%0D`, `%0A`; nothing else is escaped |
+
+Parse by splitting on `:` first (an escaped username has no raw colon), require exactly five parts,
+then unescape each username. Anything off
+shape rejects the whole line, and the client draws the playlist as an ordinary mix.
+
+The `nb1:` line of a Blend is an ordinary six-field descriptor with kind `blend` and a slot of
+`blend-` plus eight hex digits (FNV-1a 32 of the two lowercased usernames, sorted, joined by a LF).
+A client that does not know the kind treats it as `other` and still shows the playlist; a client
+that does not know `nbblend1` strips the line because it matches `nb<alnum>:`.
+
+Avatars: Navidrome's `getAvatar` answers every username, even one that does not exist, with the same
+placeholder image (measured on 0.64.2), so clients draw initials from the usernames.
+
+The budget: with two 32-character usernames, a 200-track count and the longest match and shared
+values, the whole description is under 255 (`TestBlendDescriptionStaysUnderTheCommentLimit`).
+
+---
+
 ## Glyph vocabulary
 
 **These are deliberately NOT SF Symbol names.** NaviBeat is two codebases, the Apple line and the

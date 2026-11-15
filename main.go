@@ -534,6 +534,9 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		human string
 		kind  string
 		sel   mixes.Selection
+		// extra is one more machine line for the description, empty for every
+		// mix except a Blend (#503551), which carries its blend line here.
+		extra string
 	}
 	var plan []entry
 
@@ -544,7 +547,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			return
 		}
 		sel.Slot = mixes.Slot(slot)
-		plan = append(plan, entry{key, name, def, slot, human, kind, sel})
+		plan = append(plan, entry{key, name, def, slot, human, kind, sel, ""})
 	}
 	add := func(key, name, slot, human, kind string, sel mixes.Selection) {
 		addAs(key, cfg.Prefix+name, cfg.Prefix+name, slot, human, kind, sel)
@@ -659,7 +662,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		})
 		sel.Slot = mixes.Slot(mixes.WrappedSlot(year))
 		plan = append(plan, entry{"wrapped", cfg.Prefix + mixes.WrappedName(year), cfg.Prefix + mixes.WrappedName(year), mixes.WrappedSlot(year),
-			"NaviBeat Mixes: your most played, since the plugin was installed. Grows through the year.", "wrapped", sel})
+			"NaviBeat Mixes: your most played, since the plugin was installed. Grows through the year.", "wrapped", sel, ""})
 	}
 
 	affinity := state.Affinity()
@@ -672,6 +675,28 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 			Day: mixes.DayIndex(now),
 		})
 		add(string(slot), cfg.SlotNames[string(slot)], string(slot), describe(cfg, sel), "timeofday", sel)
+	}
+
+	// #503551 Blend: one playlist per configured pair, written into each of the
+	// two accounts as its own copy. Built from both collector histories (the
+	// same per-user record Wrapped reads), restricted to THIS account's pool so
+	// nothing outside its libraries is ever written into its library.
+	for _, partner := range cfg.BlendPartners(username) {
+		partnerName := canonicalUser(partner)
+		res := mixes.BuildBlend(mixes.BlendInput{
+			Owner: username, Partner: partnerName,
+			OwnerPlays: state.TotalPlays(), PartnerPlays: loadState(partnerName).TotalPlays(),
+			Pool: tracks, Size: cfg.MixSize, MaxPerArtist: cfg.MaxPerArtist,
+		})
+		if !res.Enough {
+			logf("user %s: Blend with %s skipped, each of you needs %d different songs played since the plugin was installed",
+				username, partnerName, mixes.BlendMinPlayed)
+			continue
+		}
+		name := cfg.Prefix + "Blend: " + username + " + " + partnerName
+		plan = append(plan, entry{"blend", name, name, string(res.Selection.Slot),
+			"NaviBeat Mixes: a Blend of what you both play, shared songs first.", "blend", res.Selection,
+			protocol.FormatBlend(protocol.Blend{Match: res.Match, Shared: res.Shared, UserA: username, UserB: partnerName})})
 	}
 
 	// Two mixes must never end up with the same name. The plan order is fixed,
@@ -728,7 +753,7 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 		// The retry cannot spin. MarkUserDone below runs whatever happens, so
 		// the day still ends, and every slot that succeeds drops out of the
 		// next pass, so successive passes get shorter rather than longer.
-		outcome := writeNamed(client, cfg, e.name, e.def, e.sel, human, e.kind, now, username)
+		outcome := writeNamed(client, cfg, e.name, e.def, e.sel, human, e.kind, now, username, e.extra)
 		if outcome != writeFailed {
 			ledger.MarkSlotDone(username, e.slot)
 		}
@@ -828,7 +853,7 @@ const (
 // opens a playlist they liked yesterday and finds it blank has lost something,
 // and an empty playlist reads as a bug even when the truth is only "not enough
 // data yet".
-func writeNamed(client *library.Client, cfg config.Config, name, legacy string, sel mixes.Selection, human, kind string, now time.Time, username string) writeOutcome {
+func writeNamed(client *library.Client, cfg config.Config, name, legacy string, sel mixes.Selection, human, kind string, now time.Time, username string, extra string) writeOutcome {
 	if len(sel.TrackIDs) < minMixSize {
 		logf("user %s: %s has %d tracks, under the %d a mix needs, so it was left alone",
 			username, name, len(sel.TrackIDs), minMixSize)
@@ -888,6 +913,11 @@ func writeNamed(client *library.Client, cfg config.Config, name, legacy string, 
 		comment = protocol.AppendLine(comment, protocol.FormatButton(protocol.Button{
 			Glyph: icon, Color: colour, Label: label,
 		}))
+	}
+	// #503551: a Blend's own line goes last, after any button line, so a
+	// comment limit that is ever enforced cuts it before the descriptor.
+	if extra != "" {
+		comment = protocol.AppendLine(comment, extra)
 	}
 	// WriteMix puts the description (the marker) before the tracks for a
 	// playlist that was just created, and fails the slot if it cannot, so a
@@ -969,6 +999,23 @@ func (p *plugin) Scrobble(req scrobbler.ScrobbleRequest) error {
 func (p *plugin) PlaybackReport(scrobbler.PlaybackReportRequest) error { return nil }
 
 // State, held in the host key-value store.
+
+// canonicalUser returns the account's username as the server spells it, so a
+// Blend pair typed as "Ana" reads the history the collector stored under
+// "ana". A name the server does not know comes back unchanged, and its empty
+// history then skips the Blend with a log line.
+func canonicalUser(name string) string {
+	users, err := host.UsersGetUsers()
+	if err != nil {
+		return name
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.UserName, name) {
+			return u.UserName
+		}
+	}
+	return name
+}
 
 func stateKey(username string) string { return "hist:" + username }
 

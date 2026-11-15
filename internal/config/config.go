@@ -84,6 +84,11 @@ type Config struct {
 	// counts every play. That decides WHEN a time-of-day mix leans, never
 	// WHICH tracks it can pick; the pool decides that, and the pool is scoped.
 	Libraries []string
+	// BlendPairs (NaviBeat #503551) are the pairs of accounts that get a
+	// shared Blend playlist, each account its own copy. EMPTY MEANS NO BLEND,
+	// so an install that never opens the field writes nothing new. Written in
+	// the settings as "nenad+ana, nenad+marko".
+	BlendPairs [][2]string
 	// WrappedSharing opts in to sending an aggregate recap for a shareable
 	// link. Off unless the user turns it on, and it is the ONLY thing in this
 	// plugin that can send anything anywhere.
@@ -404,6 +409,9 @@ func Load(get Getter) Config {
 	if v := strings.TrimSpace(get("libraries")); v != "" {
 		c.Libraries = splitList(v)
 	}
+	if v := strings.TrimSpace(get("blendPairs")); v != "" {
+		c.BlendPairs = parseBlendPairs(v)
+	}
 	if v := strings.TrimSpace(get("genreNoiseThreshold")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
 			c.GenreNoiseThreshold = f
@@ -569,6 +577,49 @@ func splitList(s string) []string {
 	for _, p := range parts {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// parseBlendPairs reads "a+b, c+d". A pair needs two different names; anything
+// else (a lone name, "a+a", "a+b+c") is skipped rather than guessed at, and a
+// pair listed twice, in either order, counts once.
+func parseBlendPairs(s string) [][2]string {
+	var out [][2]string
+	seen := map[string]bool{}
+	for _, item := range splitList(s) {
+		names := strings.Split(item, "+")
+		if len(names) != 2 {
+			continue
+		}
+		a, b := strings.TrimSpace(names[0]), strings.TrimSpace(names[1])
+		if a == "" || b == "" || strings.EqualFold(a, b) {
+			continue
+		}
+		key := strings.ToLower(a) + "\n" + strings.ToLower(b)
+		if strings.ToLower(b) < strings.ToLower(a) {
+			key = strings.ToLower(b) + "\n" + strings.ToLower(a)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, [2]string{a, b})
+	}
+	return out
+}
+
+// BlendPartners returns the accounts that share a Blend with username,
+// matched ignoring case like every other username setting here.
+func (c Config) BlendPartners(username string) []string {
+	var out []string
+	for _, p := range c.BlendPairs {
+		switch {
+		case strings.EqualFold(p[0], username):
+			out = append(out, p[1])
+		case strings.EqualFold(p[1], username):
+			out = append(out, p[0])
 		}
 	}
 	return out
