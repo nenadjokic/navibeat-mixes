@@ -97,6 +97,12 @@ type Config struct {
 	// "1960s, 1970s"; see parseDecades for the accepted forms.
 	DecadesInclude []int
 	DecadesExclude []int
+	// DecadesIncludeByUser and DecadesExcludeByUser (#20, dcihon after
+	// 0.9.31): "user: decades" parts of the same two settings, keyed by the
+	// lowercased username. For that account they REPLACE the shared list
+	// above; read them through DecadesIncludeFor / DecadesExcludeFor.
+	DecadesIncludeByUser map[string][]int
+	DecadesExcludeByUser map[string][]int
 	// WrappedSharing opts in to sending an aggregate recap for a shareable
 	// link. Off unless the user turns it on, and it is the ONLY thing in this
 	// plugin that can send anything anywhere.
@@ -421,10 +427,10 @@ func Load(get Getter) Config {
 		c.BlendPairs = parseBlendPairs(v)
 	}
 	if v := strings.TrimSpace(get("decadesInclude")); v != "" {
-		c.DecadesInclude = parseDecades(v)
+		c.DecadesInclude, c.DecadesIncludeByUser = parseDecadeRules(v)
 	}
 	if v := strings.TrimSpace(get("decadesExclude")); v != "" {
-		c.DecadesExclude = parseDecades(v)
+		c.DecadesExclude, c.DecadesExcludeByUser = parseDecadeRules(v)
 	}
 	if v := strings.TrimSpace(get("genreNoiseThreshold")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
@@ -594,6 +600,70 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseDecadeRules splits a decade setting into the shared list and the
+// per-account lists (#20). Parts are separated by ";". A part written
+// "user: decades" belongs to that account only, matched ignoring case like
+// every other username setting here; a part with no name is the shared list
+// (several such parts are joined). A value with no ";" and no ":" is one
+// shared list, exactly as 0.9.31 read it.
+func parseDecadeRules(s string) ([]int, map[string][]int) {
+	var shared []int
+	var byUser map[string][]int
+	for _, part := range strings.Split(s, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if i := strings.Index(part, ":"); i > 0 {
+			user := strings.ToLower(strings.TrimSpace(part[:i]))
+			list := parseDecades(part[i+1:])
+			if user == "" || len(list) == 0 {
+				continue
+			}
+			if byUser == nil {
+				byUser = map[string][]int{}
+			}
+			byUser[user] = mergeDecades(byUser[user], list)
+			continue
+		}
+		shared = mergeDecades(shared, parseDecades(part))
+	}
+	return shared, byUser
+}
+
+func mergeDecades(a, b []int) []int {
+	for _, d := range b {
+		dup := false
+		for _, x := range a {
+			if x == d {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			a = append(a, d)
+		}
+	}
+	return a
+}
+
+// DecadesIncludeFor is the "always include" list for username: its own
+// "user: decades" part when it has one, otherwise the shared list.
+func (c Config) DecadesIncludeFor(username string) []int {
+	if l, ok := c.DecadesIncludeByUser[strings.ToLower(strings.TrimSpace(username))]; ok {
+		return l
+	}
+	return c.DecadesInclude
+}
+
+// DecadesExcludeFor is the "never include" list for username, the same way.
+func (c Config) DecadesExcludeFor(username string) []int {
+	if l, ok := c.DecadesExcludeByUser[strings.ToLower(strings.TrimSpace(username))]; ok {
+		return l
+	}
+	return c.DecadesExclude
 }
 
 // parseDecades reads a comma separated list of decades into decade start

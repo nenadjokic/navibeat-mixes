@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.9.31",
+  "version": "0.9.32",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -247,7 +247,7 @@
           "type": "string",
           "title": "Decades: always include",
           "default": "",
-          "description": "Comma separated, for example 1960s, 1970s (1960, 60s and 1960's work too; 00s, 10s and 20s mean the 2000s, 2010s and 2020s). These decades are always in the pool the two weekly decade mixes rotate through, even when they are not among your six strongest. A decade still needs at least 10 songs a mix can use (counting no more than Most tracks from one artist per artist); one with fewer is left out rather than shown as an empty mix. Leave empty to pick decades automatically, as today."
+          "description": "Comma separated, for example 1960s, 1970s (1960, 60s and 1960's work too; 00s, 10s and 20s mean the 2000s, 2010s and 2020s). These decades are always in the pool the two weekly decade mixes rotate through, even when they are not among your six strongest. A decade still needs at least 10 songs a mix can use (counting no more than Most tracks from one artist per artist); one with fewer is left out rather than shown as an empty mix. For one account only, write \"user: decades\" and separate parts with \";\", for example \"1970s; nenad: 1960s; ana: 1980s, 1990s\": that account uses its own list, everyone else the shared one. Leave empty to pick decades automatically, as today."
         },
         "decadesExclude": {
           "type": "string",
@@ -256,7 +256,7 @@
           "description": "Comma separated, same format, for example 2020s. These decades are no longer picked for a decade mix, and the next strongest decade takes their place. A decade mix you already have for one of them stays in your library and stops being refreshed; delete it by hand if you like. A decade listed in both fields is left out."
         },
         "mixStyle": {
-          "type": "string",
+          "type": "string For one account only, use the same \"user: decades\" form, for example \"2020s; ana: 2010s\".",
           "title": "How NaviBeat draws these playlists",
           "enum": [
             "cover",

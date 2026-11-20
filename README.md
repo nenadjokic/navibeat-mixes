@@ -291,6 +291,11 @@ per song you own) and show two of them each week. Two fields change that
 | Decades: always include | `decadesInclude` | These decades are always in the pool, first, oldest first, even when they are not in your top six. The automatic ranking fills the rest, so the pool holds six decades, or more if you list more than six. |
 | Decades: never include | `decadesExclude` | These decades are no longer picked for a decade mix. The next strongest one takes the place. A decade listed in both fields is left out. |
 
+Per account: separate parts with `;` and write `user: decades` for one
+account, for example `1970s; nenad: 1960s; ana: 1980s, 1990s`. That account
+uses its own list, everyone else the part without a name. Usernames match
+ignoring case. A value without `;` works exactly as before.
+
 Write them comma separated: `1960s, 1970s`. `1960` and `1965` also mean the
 1960s, and `60s`, `'60s` or `1960's` works too; the two digit forms `00s`, `10s` and
 `20s` mean the 2000s, 2010s and 2020s, so the 1920s have to be written as
