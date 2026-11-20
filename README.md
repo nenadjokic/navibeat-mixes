@@ -289,10 +289,10 @@ per song you own) and show two of them each week. Two fields change that
 | Field | Key | Effect |
 |---|---|---|
 | Decades: always include | `decadesInclude` | These decades are always in the pool, first, oldest first, even when they are not in your top six. The automatic ranking fills the rest, so the pool holds six decades, or more if you list more than six. |
-| Decades: never include | `decadesExclude` | These decades never get a decade mix. The next strongest one takes the place. A decade listed in both fields is left out. |
+| Decades: never include | `decadesExclude` | These decades are no longer picked for a decade mix. The next strongest one takes the place. A decade listed in both fields is left out. |
 
 Write them comma separated: `1960s, 1970s`. `1960` and `1965` also mean the
-1960s, and `60s` or `'60s` works too; the two digit forms `00s`, `10s` and
+1960s, and `60s`, `'60s` or `1960's` works too; the two digit forms `00s`, `10s` and
 `20s` mean the 2000s, 2010s and 2020s, so the 1920s have to be written as
 `1920s`. An entry the plugin cannot read is skipped and the rest still apply.
 
@@ -302,6 +302,11 @@ of the pool, because it would otherwise take a weekly slot and come out as a
 missing playlist. The rotation stays two decades a week over the whole pool,
 so with eight decades included each one comes round every four weeks. Leave
 both fields empty and the decades are exactly what they were before.
+
+Each decade has its own playlist, and the plugin never deletes one. A decade
+mix you already have for a decade you now exclude stays in your library and
+simply stops being refreshed, the same as a decade that rotates out for the
+week. Delete it by hand if you do not want it.
 
 ### On a server with more than one account
 

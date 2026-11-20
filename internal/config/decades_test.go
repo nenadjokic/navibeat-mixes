@@ -17,6 +17,7 @@ func TestParseDecades(t *testing.T) {
 		{"60s, '70s, ’80s", []int{1960, 1970, 1980}},
 		{"00s, 10s, 20s, 30s, 90s", []int{2000, 2010, 2020, 1930, 1990}},
 		{"1920s", []int{1920}},
+		{"1960's, 70's, 80’s", []int{1960, 1970, 1980}},
 		{"1990s, 1990, 90s", []int{1990}},
 		// Invalid entries are skipped, the valid ones around them kept.
 		{"sixties, 1960s, 65s, 1890s, 3000, 196, , 1970s", []int{1960, 1970}},

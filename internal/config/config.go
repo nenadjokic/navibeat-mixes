@@ -626,6 +626,8 @@ func parseDecade(p string) (int, bool) {
 	// A leading apostrophe, straight or curly, as in '60s.
 	p = strings.TrimLeft(p, "'‘’")
 	p = strings.TrimSuffix(p, "s")
+	// The possessive form, 1960's or 60's, straight or curly.
+	p = strings.TrimRight(p, "'’")
 	if p == "" {
 		return 0, false
 	}
