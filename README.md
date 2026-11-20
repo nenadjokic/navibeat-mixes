@@ -231,7 +231,7 @@ files, no restart. Five groups:
 | Group | What you can change |
 |---|---|
 | Playlists | The name prefix, which accounts get mixes, and how many tracks each mix holds |
-| Which mixes to build | A switch per mix, so you can turn off any you do not want, and what New Music counts as new |
+| Which mixes to build | A switch per mix, so you can turn off any you do not want, what New Music counts as new, and which decades always or never get a decade mix |
 | Names | Rename any mix, so they can speak your language |
 | Tuning | Rediscover age, how soon mixes become time-aware, genre filtering, seconds of work per call |
 | Sharing | Wrapped sharing, off by default |
@@ -279,6 +279,29 @@ order set, and only while New Music is enabled.
 A library with no dates in its tags comes out in exactly the added order, so
 the setting can never make the mix worse than the default. Played tracks still
 go behind unplayed ones in both orders.
+
+### Choosing your decades
+
+By default the decade mixes pick your six strongest decades (plays, plus one
+per song you own) and show two of them each week. Two fields change that
+(navibeat-mixes#20):
+
+| Field | Key | Effect |
+|---|---|---|
+| Decades: always include | `decadesInclude` | These decades are always in the pool, first, oldest first, even when they are not in your top six. The automatic ranking fills the rest, so the pool holds six decades, or more if you list more than six. |
+| Decades: never include | `decadesExclude` | These decades never get a decade mix. The next strongest one takes the place. A decade listed in both fields is left out. |
+
+Write them comma separated: `1960s, 1970s`. `1960` and `1965` also mean the
+1960s, and `60s` or `'60s` works too; the two digit forms `00s`, `10s` and
+`20s` mean the 2000s, 2010s and 2020s, so the 1920s have to be written as
+`1920s`. An entry the plugin cannot read is skipped and the rest still apply.
+
+An included decade still needs at least 10 songs a mix can use, counting no
+more than "Most tracks from one artist" per artist. One with fewer is left out
+of the pool, because it would otherwise take a weekly slot and come out as a
+missing playlist. The rotation stays two decades a week over the whole pool,
+so with eight decades included each one comes round every four weeks. Leave
+both fields empty and the decades are exactly what they were before.
 
 ### On a server with more than one account
 

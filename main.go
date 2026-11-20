@@ -648,7 +648,10 @@ func generateForUser(cfg config.Config, username string, ledger *resume.Ledger, 
 	}
 	// Same floor and same reason as the genre and artist pools: a decade that
 	// cannot fill a mix must not take a rotation slot it will then leave empty.
-	for _, d := range mixes.Rotate(mixes.TopDecadesOwning(tracks, 6, minMixSize, cfg.MaxPerArtist), week, 2) {
+	// The listener's always and never lists (navibeat-mixes#20) shape the
+	// pool; with both empty it is the top 6 exactly as before.
+	decades := mixes.DecadePool(tracks, 6, minMixSize, cfg.MaxPerArtist, cfg.DecadesInclude, cfg.DecadesExclude)
+	for _, d := range mixes.Rotate(decades, week, 2) {
 		label := strconv.Itoa(d) + "s"
 		addSubject("decade", "decade", label, label, "decade-"+strconv.Itoa(d),
 			naming.Sentence("decade", label),

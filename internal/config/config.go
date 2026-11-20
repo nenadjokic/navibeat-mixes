@@ -89,6 +89,14 @@ type Config struct {
 	// so an install that never opens the field writes nothing new. Written in
 	// the settings as "nenad+ana, nenad+marko".
 	BlendPairs [][2]string
+	// DecadesInclude and DecadesExclude (navibeat-mixes#20, Jean-PierreJ)
+	// steer the decade mixes: an included decade is always in the weekly
+	// rotation pool if it can fill a mix, an excluded one never is. Each is
+	// a decade start year (1960 for the 1960s). EMPTY MEANS TODAY'S
+	// AUTOMATIC RANKING, unchanged. Written in the settings as
+	// "1960s, 1970s"; see parseDecades for the accepted forms.
+	DecadesInclude []int
+	DecadesExclude []int
 	// WrappedSharing opts in to sending an aggregate recap for a shareable
 	// link. Off unless the user turns it on, and it is the ONLY thing in this
 	// plugin that can send anything anywhere.
@@ -412,6 +420,12 @@ func Load(get Getter) Config {
 	if v := strings.TrimSpace(get("blendPairs")); v != "" {
 		c.BlendPairs = parseBlendPairs(v)
 	}
+	if v := strings.TrimSpace(get("decadesInclude")); v != "" {
+		c.DecadesInclude = parseDecades(v)
+	}
+	if v := strings.TrimSpace(get("decadesExclude")); v != "" {
+		c.DecadesExclude = parseDecades(v)
+	}
 	if v := strings.TrimSpace(get("genreNoiseThreshold")); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
 			c.GenreNoiseThreshold = f
@@ -580,6 +594,66 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseDecades reads a comma separated list of decades into decade start
+// years, in the order written, each once. Accepted, case insensitive:
+//
+//	"1960s" or "1960"   the 1960s
+//	"1965"              the 1960s too: any year names its decade
+//	"60s" or "'60s"     the 1960s; "00s", "10s" and "20s" are the 2000s,
+//	                    2010s and 2020s, so the 1920s must be written out
+//
+// Anything else is skipped rather than guessed at, so a typo leaves out that
+// one entry and never the rest of the list or the run. Years before 1900 are
+// skipped because the decade mixes ignore them.
+func parseDecades(s string) []int {
+	var out []int
+	seen := map[int]bool{}
+	for _, p := range splitList(s) {
+		d, ok := parseDecade(p)
+		if !ok || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+func parseDecade(p string) (int, bool) {
+	p = strings.ToLower(strings.TrimSpace(p))
+	// A leading apostrophe, straight or curly, as in '60s.
+	p = strings.TrimLeft(p, "'‘’")
+	p = strings.TrimSuffix(p, "s")
+	if p == "" {
+		return 0, false
+	}
+	for _, r := range p {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		return 0, false
+	}
+	switch len(p) {
+	case 4:
+		if n < 1900 || n > 2099 {
+			return 0, false
+		}
+		return n / 10 * 10, true
+	case 2:
+		if n%10 != 0 {
+			return 0, false
+		}
+		if n < 30 {
+			return 2000 + n, true
+		}
+		return 1900 + n, true
+	}
+	return 0, false
 }
 
 // parseBlendPairs reads "a+b, c+d". A pair needs two different names; anything

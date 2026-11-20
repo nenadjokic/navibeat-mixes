@@ -243,6 +243,18 @@
           "title": "Decade mixes",
           "default": true
         },
+        "decadesInclude": {
+          "type": "string",
+          "title": "Decades: always include",
+          "default": "",
+          "description": "Comma separated, for example 1960s, 1970s (1960 and 60s work too; 00s, 10s and 20s mean the 2000s, 2010s and 2020s). These decades are always in the pool the two weekly decade mixes rotate through, even when they are not among your six strongest. A decade still needs at least 10 songs a mix can use (counting no more than Most tracks from one artist per artist); one with fewer is left out rather than shown as an empty mix. Leave empty to pick decades automatically, as today."
+        },
+        "decadesExclude": {
+          "type": "string",
+          "title": "Decades: never include",
+          "default": "",
+          "description": "Comma separated, same format, for example 2020s. These decades never get a decade mix, and the next strongest decade takes their place. A decade listed in both fields is left out."
+        },
         "mixStyle": {
           "type": "string",
           "title": "How NaviBeat draws these playlists",
@@ -791,6 +803,14 @@
             {
               "type": "Control",
               "scope": "#/properties/enableDecade"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/decadesInclude"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/decadesExclude"
             }
           ]
         },

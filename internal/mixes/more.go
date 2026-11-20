@@ -505,6 +505,16 @@ func TopDecades(tracks []Track, n int) []int {
 // Ranking is unchanged for every eligible decade: TopDecades keeps its key so
 // the order a listener already sees does not move.
 func TopDecadesOwning(tracks []Track, n, minOwned, maxPerArtist int) []int {
+	all := rankedDecadesOwning(tracks, minOwned, maxPerArtist)
+	if len(all) > n {
+		all = all[:n]
+	}
+	return all
+}
+
+// rankedDecadesOwning is every decade that can fill a mix, strongest first:
+// the whole ranking TopDecadesOwning cuts to n.
+func rankedDecadesOwning(tracks []Track, minOwned, maxPerArtist int) []int {
 	plays := map[int]int{}
 	byArtist := map[int]map[string]int{}
 	for _, t := range tracks {
@@ -533,9 +543,68 @@ func TopDecadesOwning(tracks []Track, n, minOwned, maxPerArtist int) []int {
 		}
 		return all[i].d > all[j].d
 	})
-	out := make([]int, 0, n)
-	for i := 0; i < len(all) && i < n; i++ {
-		out = append(out, all[i].d)
+	out := make([]int, 0, len(all))
+	for _, x := range all {
+		out = append(out, x.d)
+	}
+	return out
+}
+
+// DecadePool is the pool the weekly decade rotation draws from, with the
+// listener's own choices applied (navibeat-mixes#20, Jean-PierreJ: "I would
+// like to choose which decades are highlighted or excluded").
+//
+// With include and exclude both empty it is TopDecadesOwning(tracks, n, ...)
+// exactly, so an install that never opens the two settings sees the same
+// decades in the same order.
+//
+// Otherwise:
+//   - an excluded decade never enters the pool, and exclude wins when a
+//     decade is listed in both;
+//   - an included decade is always in the pool, first, in ascending order,
+//     even when it ranks outside the top n, but ONLY when it can fill a mix
+//     (minOwned tracks under the per-artist cap). A decade that cannot is
+//     left out for the same reason TopDecadesOwning leaves it out: it would
+//     take a rotation slot and then come out as a missing playlist;
+//   - the automatic ranking fills the remaining places, skipping excluded and
+//     already included decades, up to max(n, number of included decades).
+func DecadePool(tracks []Track, n, minOwned, maxPerArtist int, include, exclude []int) []int {
+	if len(include) == 0 && len(exclude) == 0 {
+		return TopDecadesOwning(tracks, n, minOwned, maxPerArtist)
+	}
+	ranked := rankedDecadesOwning(tracks, minOwned, maxPerArtist)
+	eligible := make(map[int]bool, len(ranked))
+	for _, d := range ranked {
+		eligible[d] = true
+	}
+	excluded := make(map[int]bool, len(exclude))
+	for _, d := range exclude {
+		excluded[d] = true
+	}
+	inPool := map[int]bool{}
+	var pinned []int
+	for _, d := range include {
+		if excluded[d] || !eligible[d] || inPool[d] {
+			continue
+		}
+		inPool[d] = true
+		pinned = append(pinned, d)
+	}
+	sort.Ints(pinned)
+	limit := n
+	if len(pinned) > limit {
+		limit = len(pinned)
+	}
+	out := make([]int, 0, limit)
+	out = append(out, pinned...)
+	for _, d := range ranked {
+		if len(out) >= limit {
+			break
+		}
+		if excluded[d] || inPool[d] {
+			continue
+		}
+		out = append(out, d)
 	}
 	return out
 }
