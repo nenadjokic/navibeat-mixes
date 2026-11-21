@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "name": "NaviBeat Mixes",
   "author": "Nenad Jokic",
-  "version": "0.9.32",
+  "version": "0.9.33",
   "description": "Listening-aware playlists: time-of-day mixes, Rediscover, and Wrapped recaps. Now also decides how NaviBeat draws them.",
   "website": "https://navibeat.app",
   "permissions": {
@@ -253,10 +253,10 @@
           "type": "string",
           "title": "Decades: never include",
           "default": "",
-          "description": "Comma separated, same format, for example 2020s. These decades are no longer picked for a decade mix, and the next strongest decade takes their place. A decade mix you already have for one of them stays in your library and stops being refreshed; delete it by hand if you like. A decade listed in both fields is left out."
+          "description": "Comma separated, same format, for example 2020s. These decades are no longer picked for a decade mix, and the next strongest decade takes their place. A decade mix you already have for one of them stays in your library and stops being refreshed; delete it by hand if you like. A decade listed in both fields is left out. For one account only, use the same \"user: decades\" form, for example \"2020s; ana: 2010s\"."
         },
         "mixStyle": {
-          "type": "string For one account only, use the same \"user: decades\" form, for example \"2020s; ana: 2010s\".",
+          "type": "string",
           "title": "How NaviBeat draws these playlists",
           "enum": [
             "cover",

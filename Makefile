@@ -116,7 +116,10 @@ check-version:
 # Tag from the manifest rather than by hand, so they cannot disagree again.
 # Pushing the tag and cutting the release stay manual on purpose: publishing is
 # a decision, not a build step.
-release-tag: check-version test check-emdash $(NDP) $(NDP64)
+check-schema:
+	@python3 scripts/check-manifest-schema.py
+
+release-tag: check-version check-schema test check-emdash $(NDP) $(NDP64)
 	git tag "v$(VERSION)"
 	@echo "tagged v$(VERSION). Now: git push origin v$(VERSION) && gh release create v$(VERSION) $(NDP) $(NDP64)"
 	@echo "Release notes must say: on 0.64 rename $(NDP64) to $(NDP) in the plugins folder."
